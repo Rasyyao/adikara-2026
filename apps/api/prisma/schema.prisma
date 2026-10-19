@@ -7,35 +7,363 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ContentStatus {
+  DRAF           @map("Draf")
+  DISETUJUI      @map("Disetujui")
+  DIPUBLIKASIKAN @map("Dipublikasikan")
+
+  @@map("content_status")
+}
+
+enum MaterialStatus {
+  UPLOADED  @map("uploaded")
+  EXTRACTED @map("extracted")
+  FAILED    @map("failed")
+
+  @@map("material_status")
+}
+
+enum Pillar {
+  DEKOMPOSISI @map("dekomposisi")
+  POLA        @map("pola")
+  ABSTRAKSI   @map("abstraksi")
+  ALGORITMA   @map("algoritma")
+
+  @@map("pillar")
+}
+
+enum ItemType {
+  BOARD         @map("board")
+  TEACHING_CARD @map("teaching_card")
+  PRACTICE      @map("practice")
+
+  @@map("item_type")
+}
+
+enum TestPhase {
+  PRETEST  @map("pretest")
+  POSTTEST @map("posttest")
+
+  @@map("test_phase")
+}
+
+enum DiagnosisStatus {
+  PERLU_DIPERIKSA         @map("perlu_diperiksa")
+  KEMUNGKINAN_MISKONSEPSI @map("kemungkinan_miskonsepsi")
+  TERATASI                @map("teratasi")
+
+  @@map("diagnosis_status")
+}
+
+enum JobType {
+  EXTRACT          @map("extract")
+  GENERATE_PACKAGE @map("generate_package")
+
+  @@map("job_type")
+}
+
+enum JobStatus {
+  QUEUED  @map("queued")
+  RUNNING @map("running")
+  DONE    @map("done")
+  FAILED  @map("failed")
+
+  @@map("job_status")
+}
+
+// ---------- Akun dan kelas ----------
+
+// ADMIN manages all teacher and student data. A teacher account with role
+// ADMIN is an admin; USER is a student.
+enum Role {
+  ADMIN   @map("admin")
+  TEACHER @map("teacher")
+  USER    @map("user")
+
+  @@map("role")
+}
+
 model Teacher {
   id           String      @id @default(uuid()) @db.Uuid
   email        String      @unique
   passwordHash String      @map("password_hash")
   name         String
+  role         Role        @default(TEACHER)
   createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz
   classrooms   Classroom[]
+  materials    Material[]
+  packages     Package[]
 
+  @@index([role])
   @@map("teachers")
 }
 
 model Classroom {
-  id        String    @id @default(uuid()) @db.Uuid
-  teacherId String    @map("teacher_id") @db.Uuid
-  name      String
-  classCode String    @unique @map("class_code")
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  teacher   Teacher   @relation(fields: [teacherId], references: [id])
-  students  Student[]
+  id         String         @id @default(uuid()) @db.Uuid
+  teacherId  String         @map("teacher_id") @db.Uuid
+  name       String
+  classCode  String         @unique @map("class_code")
+  archivedAt DateTime?      @map("archived_at") @db.Timestamptz
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  teacher    Teacher        @relation(fields: [teacherId], references: [id])
+  students   Student[]
+  packages   ClassPackage[]
 
+  @@index([teacherId])
   @@map("classes")
 }
 
 model Student {
-  id           String    @id @default(uuid()) @db.Uuid
-  classId      String    @map("class_id") @db.Uuid
-  tokenHash    String    @unique @map("token_hash")
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  classroom    Classroom @relation(fields: [classId], references: [id])
+  id                  String               @id @default(uuid()) @db.Uuid
+  classId             String               @map("class_id") @db.Uuid
+  tokenHash           String?              @unique @map("token_hash")
+  username            String?              @unique
+  passwordHash        String?              @map("password_hash")
+  alias               String?
+  role                Role                 @default(USER)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  lastSeenAt          DateTime?            @map("last_seen_at") @db.Timestamptz
+  classroom           Classroom            @relation(fields: [classId], references: [id])
+  attempts            Attempt[]
+  practiceSubmissions PracticeSubmission[]
+  diagnoses           Diagnosis[]
 
+  @@index([classId])
   @@map("students")
+}
+
+// ---------- Materi dan paket ----------
+
+model Material {
+  id            String         @id @default(uuid()) @db.Uuid
+  teacherId     String         @map("teacher_id") @db.Uuid
+  title         String
+  filePath      String         @map("file_path")
+  fileType      String         @map("file_type") // pdf | pptx
+  extractedText String?        @map("extracted_text")
+  status        MaterialStatus @default(UPLOADED)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  teacher       Teacher        @relation(fields: [teacherId], references: [id])
+  packages      Package[]
+
+  @@map("materials")
+}
+
+model Package {
+  id            String         @id @default(uuid()) @db.Uuid
+  materialId    String         @map("material_id") @db.Uuid
+  teacherId     String         @map("teacher_id") @db.Uuid
+  title         String
+  status        ContentStatus  @default(DRAF)
+  aiModel       String?        @map("ai_model")
+  publishedAt   DateTime?      @map("published_at") @db.Timestamptz
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  material      Material       @relation(fields: [materialId], references: [id])
+  teacher       Teacher        @relation(fields: [teacherId], references: [id])
+  classPackages ClassPackage[]
+  concepts      Concept[]
+  items         PackageItem[]
+  questions     Question[]
+  practiceTasks PracticeTask[]
+  attempts      Attempt[]
+
+  @@index([teacherId, status])
+  @@index([materialId])
+  @@map("packages")
+}
+
+model ClassPackage {
+  classId   String    @map("class_id") @db.Uuid
+  packageId String    @map("package_id") @db.Uuid
+  openedAt  DateTime  @default(now()) @map("opened_at") @db.Timestamptz
+  classroom Classroom @relation(fields: [classId], references: [id], onDelete: Cascade)
+  package   Package   @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@id([classId, packageId])
+  @@map("class_packages")
+}
+
+model Concept {
+  id            String         @id @default(uuid()) @db.Uuid
+  packageId     String         @map("package_id") @db.Uuid
+  name          String
+  description   String?
+  pillar        Pillar
+  boardJson     Json?          @map("board_json")
+  position      Int            @default(0)
+  package       Package        @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  items         PackageItem[]
+  questions     Question[]
+  practiceTasks PracticeTask[]
+  diagnoses     Diagnosis[]
+
+  @@index([packageId])
+  @@map("concepts")
+}
+
+model PackageItem {
+  id          String        @id @default(uuid()) @db.Uuid
+  packageId   String        @map("package_id") @db.Uuid
+  conceptId   String?       @map("concept_id") @db.Uuid
+  itemType    ItemType      @map("item_type")
+  contentJson Json          @map("content_json")
+  status      ContentStatus @default(DRAF)
+  position    Int           @default(0)
+  package     Package       @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  concept     Concept?      @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+
+  @@index([packageId])
+  @@map("package_items")
+}
+
+// ---------- Soal dan latihan ----------
+
+model Question {
+  id        String        @id @default(uuid()) @db.Uuid
+  packageId String        @map("package_id") @db.Uuid
+  conceptId String        @map("concept_id") @db.Uuid
+  phase     TestPhase
+  pairId    String?       @unique @map("pair_id") @db.Uuid // posttest pairs with a pretest
+  stem      String
+  status    ContentStatus @default(DRAF)
+  position  Int           @default(0)
+  package   Package       @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  concept   Concept       @relation(fields: [conceptId], references: [id], onDelete: NoAction)
+  pair      Question?     @relation("QuestionPair", fields: [pairId], references: [id], onDelete: SetNull)
+  pairedBy  Question?     @relation("QuestionPair")
+  options   Option[]
+  answers   Answer[]
+
+  @@index([packageId, phase, position])
+  @@map("questions")
+}
+
+model Option {
+  id                 String   @id @default(uuid()) @db.Uuid
+  questionId         String   @map("question_id") @db.Uuid
+  text               String
+  isCorrect          Boolean  @default(false) @map("is_correct")
+  misconceptionLabel String?  @map("misconception_label") // null when correct
+  position           Int      @default(0)
+  question           Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answers            Answer[]
+
+  @@index([questionId])
+  @@map("options")
+}
+
+model PracticeTask {
+  id           String               @id @default(uuid()) @db.Uuid
+  packageId    String               @map("package_id") @db.Uuid
+  conceptId    String               @map("concept_id") @db.Uuid
+  pillar       Pillar
+  prompt       String
+  startBlocks  Json?                @map("start_blocks")
+  expectedJson Json?                @map("expected_json")
+  refPython    String?              @map("ref_python")
+  refJs        String?              @map("ref_js")
+  package      Package              @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  concept      Concept              @relation(fields: [conceptId], references: [id], onDelete: NoAction)
+  hints        Hint[]
+  submissions  PracticeSubmission[]
+
+  @@index([packageId])
+  @@map("practice_tasks")
+}
+
+model Hint {
+  id     String       @id @default(uuid()) @db.Uuid
+  taskId String       @map("task_id") @db.Uuid
+  level  Int          @db.SmallInt // 1..3
+  text   String
+  task   PracticeTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, level])
+  @@map("hints")
+}
+
+// ---------- Hasil dan diagnosis ----------
+
+model Attempt {
+  id          String      @id @default(uuid()) @db.Uuid
+  studentId   String      @map("student_id") @db.Uuid
+  packageId   String      @map("package_id") @db.Uuid
+  phase       TestPhase
+  score       Decimal?    @db.Decimal(5, 2)
+  startedAt   DateTime    @default(now()) @map("started_at") @db.Timestamptz
+  submittedAt DateTime?   @map("submitted_at") @db.Timestamptz
+  student     Student     @relation(fields: [studentId], references: [id])
+  package     Package     @relation(fields: [packageId], references: [id])
+  answers     Answer[]
+  diagnoses   Diagnosis[]
+
+  @@unique([studentId, packageId, phase]) // one attempt per phase (MVP)
+  @@map("attempts")
+}
+
+model Answer {
+  id         String   @id @default(uuid()) @db.Uuid
+  attemptId  String   @map("attempt_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  optionId   String   @map("option_id") @db.Uuid
+  isCorrect  Boolean  @map("is_correct")
+  answeredAt DateTime @default(now()) @map("answered_at") @db.Timestamptz
+  attempt    Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question   Question @relation(fields: [questionId], references: [id])
+  option     Option   @relation(fields: [optionId], references: [id])
+
+  @@unique([attemptId, questionId])
+  @@map("answers")
+}
+
+model PracticeSubmission {
+  id          String       @id @default(uuid()) @db.Uuid
+  studentId   String       @map("student_id") @db.Uuid
+  taskId      String       @map("task_id") @db.Uuid
+  blocksJson  Json         @map("blocks_json")
+  passed      Boolean      @default(false)
+  hintsUsed   Int          @default(0) @map("hints_used") @db.SmallInt
+  submittedAt DateTime     @default(now()) @map("submitted_at") @db.Timestamptz
+  student     Student      @relation(fields: [studentId], references: [id])
+  task        PracticeTask @relation(fields: [taskId], references: [id])
+
+  @@index([studentId, taskId])
+  @@map("practice_submissions")
+}
+
+model Diagnosis {
+  id                 String          @id @default(uuid()) @db.Uuid
+  studentId          String          @map("student_id") @db.Uuid
+  conceptId          String          @map("concept_id") @db.Uuid
+  attemptId          String          @map("attempt_id") @db.Uuid
+  misconceptionLabel String          @map("misconception_label")
+  evidenceCount      Int             @map("evidence_count") @db.SmallInt
+  status             DiagnosisStatus
+  evidenceJson       Json            @map("evidence_json")
+  computedAt         DateTime        @default(now()) @map("computed_at") @db.Timestamptz
+  student            Student         @relation(fields: [studentId], references: [id])
+  concept            Concept         @relation(fields: [conceptId], references: [id])
+  attempt            Attempt         @relation(fields: [attemptId], references: [id])
+
+  @@unique([studentId, conceptId, misconceptionLabel])
+  @@index([conceptId, status])
+  @@map("diagnoses")
+}
+
+// ---------- Sistem ----------
+
+model Job {
+  id         String    @id @default(uuid()) @db.Uuid
+  type       JobType
+  payload    Json
+  status     JobStatus @default(QUEUED)
+  attempts   Int       @default(0) @db.SmallInt
+  error      String?
+  resultRef  String?   @map("result_ref") @db.Uuid
+  lockedAt   DateTime? @map("locked_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz
+
+  @@index([status, createdAt])
+  @@map("jobs")
 }

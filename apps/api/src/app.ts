@@ -1,18 +1,29 @@
 import cors from "cors";
-import express, { type ErrorRequestHandler } from "express";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "./generated/prisma/client.js";
+import express from "express";
+import helmet from "helmet";
+import type { Config } from "./config/index.js";
+import { errorHandler, notFoundHandler } from "./http/middleware/error-handler.js";
+import { createAuthService } from "./services/auth.service.js";
+import type { AuthRepository } from "./types/auth.types.js";
+import { createTokenService } from "./lib/token.js";
+import { createRoutes } from "./routes/index.js";
 
-export function createApp() {
-  const prisma = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
-  });
+export interface AppDeps {
+  config: Config;
+  /** Resolves when the database answers; rejects otherwise. */
+  pingDb: () => Promise<void>;
+  authRepository: AuthRepository;
+}
+
+export async function createApp({ config, pingDb, authRepository }: AppDeps) {
+  const tokens = createTokenService({ secret: config.jwtSecret, ttlSeconds: config.jwtTtlMinutes * 60 });
+  const authService = await createAuthService(authRepository, tokens, { bcryptCost: config.bcryptCost });
 
   const app = express();
-  const origins = (process.env.CORS_ALLOWED_ORIGINS ?? "").split(",").filter(Boolean);
 
-  app.use(cors({ origin: origins }));
-  app.use(express.json());
+  app.use(helmet());
+  app.use(cors({ origin: config.corsOrigins }));
+  app.use(express.json({ limit: "10kb" }));
 
   app.get("/healthz", (_req, res) => {
     res.json({ status: "ok" });
@@ -20,21 +31,16 @@ export function createApp() {
 
   app.get("/readyz", async (_req, res) => {
     try {
-      await prisma.$queryRaw`SELECT 1`;
+      await pingDb();
       res.json({ status: "ok" });
     } catch {
-      res.status(503).json({
-        error: { code: "db_unavailable", message: "Database is not reachable" },
-      });
+      res.status(503).json({ error: { code: "db_unavailable", message: "Database is not reachable" } });
     }
   });
 
-  const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
-    console.error(err);
-    res.status(500).json({
-      error: { code: "internal_error", message: "Internal server error" },
-    });
-  };
+  app.use("/api/v1", createRoutes({ config, tokens, authService }));
+
+  app.use(notFoundHandler);
   app.use(errorHandler);
 
   return app;
