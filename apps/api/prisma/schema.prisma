@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Teacher {
+  id           String      @id @default(uuid()) @db.Uuid
+  email        String      @unique
+  passwordHash String      @map("password_hash")
+  name         String
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  classrooms   Classroom[]
+
+  @@map("teachers")
+}
+
+model Classroom {
+  id        String    @id @default(uuid()) @db.Uuid
+  teacherId String    @map("teacher_id") @db.Uuid
+  name      String
+  classCode String    @unique @map("class_code")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  teacher   Teacher   @relation(fields: [teacherId], references: [id])
+  students  Student[]
+
+  @@map("classes")
+}
+
+model Student {
+  id           String    @id @default(uuid()) @db.Uuid
+  classId      String    @map("class_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  classroom    Classroom @relation(fields: [classId], references: [id])
+
+  @@map("students")
+}

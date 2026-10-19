@@ -1,0 +1,11 @@
+{
+  "name": "adikara",
+  "private": true,
+  "scripts": {
+    "install:all": "pnpm --dir apps/api install && pnpm --dir apps/web install",
+    "dev": "pnpm --dir apps/api dev & pnpm --dir apps/web dev & wait",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "migrate": "pnpm --dir apps/api exec prisma migrate dev"
+  }
+}
