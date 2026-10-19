@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+/.claude
+# Generated
+apps/api/src/generated/
+
+# Environment (commit only .env.example)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Test and coverage
+coverage/
+.nyc_output/
+
+# Uploads and local data
+uploads/
+storage/
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# Misc
+.vercel
+.turbo
+*.pem
