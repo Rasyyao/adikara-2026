@@ -8,6 +8,8 @@
     "db:down": "docker compose down",
     "migrate": "pnpm --dir apps/api exec prisma migrate dev",
     "test": "pnpm --dir apps/api test",
-    "seed": "pnpm --dir apps/api seed"
+    "seed": "pnpm --dir apps/api seed",
+    "routes": "pnpm --silent --dir apps/api routes",
+    "openapi": "pnpm --dir apps/api openapi"
   }
 }

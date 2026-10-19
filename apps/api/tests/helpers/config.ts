@@ -13,6 +13,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     loginRateLimitMax: 1000,
     loginRateLimitWindowMinutes: 15,
     corsOrigins: ["http://localhost:3000"],
+    docsEnabled: true,
     ...overrides,
   };
 }

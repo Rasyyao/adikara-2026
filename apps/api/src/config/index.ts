@@ -8,6 +8,8 @@ export interface Config {
   loginRateLimitMax: number;
   loginRateLimitWindowMinutes: number;
   corsOrigins: string[];
+  /** Serve Swagger UI at /docs. Off in production unless DOCS_ENABLED=true. */
+  docsEnabled: boolean;
 }
 
 function readInt(
@@ -48,8 +50,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     problems.push("CORS_ALLOWED_ORIGINS must list explicit origins, not *");
   }
 
+  const nodeEnv = env.NODE_ENV ?? "development";
+  const docsFlag = env.DOCS_ENABLED;
+  if (docsFlag !== undefined && docsFlag !== "" && docsFlag !== "true" && docsFlag !== "false") {
+    problems.push("DOCS_ENABLED must be true or false");
+  }
+
   const config: Config = {
-    nodeEnv: env.NODE_ENV ?? "development",
+    nodeEnv,
     port: readInt(env, "PORT", 8080, 1, 65535, problems),
     databaseUrl,
     jwtSecret,
@@ -58,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     loginRateLimitMax: readInt(env, "LOGIN_RATE_LIMIT_MAX", 10, 1, 1000, problems),
     loginRateLimitWindowMinutes: readInt(env, "LOGIN_RATE_LIMIT_WINDOW_MINUTES", 15, 1, 1440, problems),
     corsOrigins,
+    docsEnabled: docsFlag ? docsFlag === "true" : nodeEnv !== "production",
   };
 
   if (problems.length > 0) {

@@ -5,11 +5,12 @@ import { createAccessGuards } from "../../src/http/middleware/access.js";
 import { errorHandler } from "../../src/http/middleware/error-handler.js";
 import { registerRoutes } from "../../src/routes/register.js";
 import type { RouteDefinition } from "../../src/routes/types.js";
+import { route } from "../helpers/route.js";
 import { ADMIN, STUDENT, TEACHER, bearer, testTokens } from "../helpers/identities.js";
 
-function buildApp(routes: RouteDefinition[]) {
+function buildApp(routes: Omit<RouteDefinition, "doc">[]) {
   const app = express();
-  app.use(registerRoutes(express.Router(), createAccessGuards(testTokens), routes));
+  app.use(registerRoutes(express.Router(), createAccessGuards(testTokens), routes.map(route)));
   app.use(errorHandler);
   return app;
 }

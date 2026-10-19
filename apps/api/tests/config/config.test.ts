@@ -32,6 +32,25 @@ describe("loadConfig", () => {
     });
   });
 
+  describe("docs flag", () => {
+    it("enables the docs outside production by default", () => {
+      expect(loadConfig({ ...valid, NODE_ENV: "development" }).docsEnabled).toBe(true);
+    });
+
+    it("disables the docs in production by default", () => {
+      expect(loadConfig({ ...valid, NODE_ENV: "production" }).docsEnabled).toBe(false);
+    });
+
+    it("lets DOCS_ENABLED override the default both ways", () => {
+      expect(loadConfig({ ...valid, NODE_ENV: "production", DOCS_ENABLED: "true" }).docsEnabled).toBe(true);
+      expect(loadConfig({ ...valid, NODE_ENV: "development", DOCS_ENABLED: "false" }).docsEnabled).toBe(false);
+    });
+
+    it("rejects any other DOCS_ENABLED value", () => {
+      expect(() => loadConfig({ ...valid, DOCS_ENABLED: "yes" })).toThrow(/DOCS_ENABLED/);
+    });
+  });
+
   describe("failure cases", () => {
     it("fails when DATABASE_URL is missing", () => {
       expect(() => loadConfig({ JWT_SECRET: valid.JWT_SECRET })).toThrow(/DATABASE_URL is required/);

@@ -8,7 +8,9 @@ One folder per feature. Run them with `apps/api/scripts/test.sh` (see `--help`).
 | `health/` | `/healthz`, `/readyz`, 404 shape |
 | `auth/` | password hashing, tokens, validators, service, and each auth endpoint |
 | `middleware/` | `authenticate`, `requireRole`, access guards, error handler |
-| `routes/` | route table: access type per route (`registerRoutes`, real API) |
+| `routes/` | route table: access type per route and table integrity (docs present, no duplicates) |
+| `docs/` | generated OpenAPI document (valid, complete, security per access type) and `/docs` endpoints |
+| `cli/` | route list formatting (`pnpm routes`) |
 | `security/` | headers, CORS, rate limiting |
 | `helpers/` | fakes and builders shared by tests (not run on their own) |
 

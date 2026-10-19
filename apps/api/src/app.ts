@@ -6,7 +6,9 @@ import { errorHandler, notFoundHandler } from "./http/middleware/error-handler.j
 import { createAuthService } from "./services/auth.service.js";
 import type { AuthRepository } from "./types/auth.types.js";
 import { createTokenService } from "./lib/token.js";
-import { createRoutes } from "./routes/index.js";
+import { API_PREFIX, createApiRouter, createLimits, createRouteGroups } from "./routes/index.js";
+import { buildOpenApi } from "./docs/openapi.js";
+import { createDocsRouter } from "./docs/ui.js";
 
 export interface AppDeps {
   config: Config;
@@ -19,7 +21,11 @@ export async function createApp({ config, pingDb, authRepository }: AppDeps) {
   const tokens = createTokenService({ secret: config.jwtSecret, ttlSeconds: config.jwtTtlMinutes * 60 });
   const authService = await createAuthService(authRepository, tokens, { bcryptCost: config.bcryptCost });
 
+  const groups = createRouteGroups({ authService, limits: createLimits(config) });
+
   const app = express();
+
+  if (config.docsEnabled) app.use("/docs", createDocsRouter(buildOpenApi(groups)));
 
   app.use(helmet());
   app.use(cors({ origin: config.corsOrigins }));
@@ -38,7 +44,7 @@ export async function createApp({ config, pingDb, authRepository }: AppDeps) {
     }
   });
 
-  app.use("/api/v1", createRoutes({ config, tokens, authService }));
+  app.use(API_PREFIX, createApiRouter(groups, tokens));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

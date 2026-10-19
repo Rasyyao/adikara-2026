@@ -31,7 +31,7 @@ Check: `curl localhost:8080/healthz` and `curl localhost:8080/readyz` (the latte
 
 ## Scripts (root)
 
-`install:all`, `dev`, `db:up`, `db:down`, `migrate`, `seed`, `test`.
+`install:all`, `dev`, `db:up`, `db:down`, `migrate`, `seed`, `test`, `routes`, `openapi`.
 
 ## API source layout (`apps/api/src`)
 
@@ -75,6 +75,20 @@ Routes are declared as a table per feature in `apps/api/src/routes/<name>.routes
 
 Middleware lives in `apps/api/src/http/middleware/` (`authenticate`, `requireRole`, `access`, `rate-limit`, `error-handler`).
 Passwords use bcrypt, tokens are HS256 JWT, login is rate limited, and the API refuses to start without a `JWT_SECRET` of 32+ characters.
+
+## Route list and API docs
+
+```bash
+pnpm routes                          # all routes grouped by feature, with access and middleware
+pnpm routes --feature auth           # one feature
+pnpm routes --access admin           # one access type
+pnpm routes --json                   # machine readable
+pnpm openapi                         # writes apps/api/docs/openapi.json (import into Postman or Insomnia)
+```
+
+Swagger UI: <http://localhost:8080/docs> (spec: `/docs/openapi.json`). To try a protected endpoint, call a login endpoint, press **Authorize**, and paste the `access_token`. The UI is on by default and off when `NODE_ENV=production` unless `DOCS_ENABLED=true`.
+
+The docs are generated from the route tables, so they cannot drift from the real routes. When you add a route, fill in its `doc` block (summary, request body, success response); `400/401/403/429/500` are added from the access type and middleware. Then run `pnpm openapi` to refresh the exported file.
 
 ## Tests
 
