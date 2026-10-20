@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { Config } from "../../config/index.js";
 import { AppError } from "../errors.js";
 import { labelled } from "./label.js";
@@ -17,4 +17,20 @@ export function createLoginLimiter(
       next(new AppError(429, "too_many_requests", "Too many login attempts, try again later")),
   });
   return labelled("rate-limit:login", limiter);
+}
+
+/** Limits attempts to join a live session. Counted per student (the route is behind the student guard), per IP as a fallback. */
+export function createJoinLimiter(
+  config: Pick<Config, "joinRateLimitMax" | "joinRateLimitWindowMinutes">,
+): RequestHandler {
+  const limiter = rateLimit({
+    windowMs: config.joinRateLimitWindowMinutes * 60 * 1000,
+    limit: config.joinRateLimitMax,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    keyGenerator: (req) => req.auth?.userId ?? ipKeyGenerator(req.ip ?? ""),
+    handler: (_req, _res, next) =>
+      next(new AppError(429, "too_many_requests", "Too many join attempts, try again later")),
+  });
+  return labelled("rate-limit:join", limiter);
 }

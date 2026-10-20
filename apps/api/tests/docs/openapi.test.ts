@@ -20,8 +20,11 @@ describe("OpenAPI document", () => {
       }
     });
 
-    it("has one tag per feature with its description", () => {
-      expect(spec.tags).toEqual(groups.map((g) => ({ name: g.feature, description: g.description })));
+    it("every operation uses a tag that is declared, and every declared tag is used", () => {
+      const declared = spec.tags.map((t: { name: string }) => t.name);
+      const used = new Set<string>(Object.values<any>(spec.paths).flatMap((item) => Object.values<any>(item).flatMap((op) => op.tags)));
+      expect([...used].sort()).toEqual([...declared].sort());
+      expect(new Set(declared).size).toBe(declared.length);
     });
 
     it("uses /api/v1 as the server base", () => {

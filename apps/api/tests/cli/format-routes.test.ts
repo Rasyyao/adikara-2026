@@ -9,6 +9,7 @@ const ok = (_req: unknown, res: { json: (v: unknown) => void }) => res.json({});
 
 const groups: RouteGroup[] = [
   {
+    role: "teacher",
     feature: "auth",
     description: "Login",
     routes: [
@@ -16,6 +17,7 @@ const groups: RouteGroup[] = [
     ],
   },
   {
+    role: "admin",
     feature: "classes",
     description: "Classes",
     routes: [
@@ -39,7 +41,7 @@ describe("route list formatting", () => {
     });
 
     it("prints a total", () => {
-      expect(formatRouteTable(groups)).toContain("3 routes in 2 features");
+      expect(formatRouteTable(groups)).toContain("3 routes in 2 groups");
     });
 
     it("adds colours only when asked", () => {

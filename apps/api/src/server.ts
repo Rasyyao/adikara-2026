@@ -1,7 +1,7 @@
 import { createApp } from "./app.js";
 import { loadConfig } from "./config/index.js";
 import { createPrisma } from "./db/prisma.js";
-import { createAuthRepository } from "./repositories/auth.repository.js";
+import { createRepositories } from "./repositories/index.js";
 
 async function main() {
   const config = loadConfig();
@@ -12,7 +12,7 @@ async function main() {
     pingDb: async () => {
       await prisma.$queryRaw`SELECT 1`;
     },
-    authRepository: createAuthRepository(prisma),
+    repositories: createRepositories(prisma),
   });
 
   app.listen(config.port, () => {

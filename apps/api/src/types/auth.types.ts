@@ -25,10 +25,3 @@ export interface AuthContext {
   role: Role;
   kind: AccountKind;
 }
-
-export interface AuthRepository {
-  findTeacherByEmail(email: string): Promise<AccountRecord | null>;
-  findStudentByUsername(username: string): Promise<AccountRecord | null>;
-  findTeacherById(id: string): Promise<AccountRecord | null>;
-  findStudentById(id: string): Promise<AccountRecord | null>;
-}

@@ -27,6 +27,7 @@ yarn-debug.log*
 # Test and coverage
 coverage/
 .nyc_output/
+/docs
 
 # Uploads and local data
 uploads/

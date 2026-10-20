@@ -15,8 +15,26 @@ describe("loadConfig", () => {
         jwtTtlMinutes: 60,
         bcryptCost: 12,
         loginRateLimitMax: 10,
+        joinRateLimitMax: 10,
+        joinRateLimitWindowMinutes: 1,
+        sessionTtlMinutes: 240,
+        sessionPresenceGraceSeconds: 10,
         corsOrigins: [],
       });
+    });
+
+    it("reads the live session settings", () => {
+      const config = loadConfig({ ...valid, SESSION_TTL_MINUTES: "90", SESSION_PRESENCE_GRACE_SECONDS: "0", JOIN_RATE_LIMIT_MAX: "5" });
+      expect(config).toMatchObject({ sessionTtlMinutes: 90, sessionPresenceGraceSeconds: 0, joinRateLimitMax: 5 });
+    });
+
+    it.each([
+      ["SESSION_TTL_MINUTES", "1"],
+      ["SESSION_TTL_MINUTES", "abc"],
+      ["SESSION_PRESENCE_GRACE_SECONDS", "-1"],
+      ["JOIN_RATE_LIMIT_MAX", "0"],
+    ])("rejects %s=%s", (key, value) => {
+      expect(() => loadConfig({ ...valid, [key]: value })).toThrow(new RegExp(key));
     });
 
     it("parses explicit values and a comma separated origin list", () => {

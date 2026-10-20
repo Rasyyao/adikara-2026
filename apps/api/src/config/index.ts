@@ -7,6 +7,13 @@ export interface Config {
   bcryptCost: number;
   loginRateLimitMax: number;
   loginRateLimitWindowMinutes: number;
+  /** Attempts per student at joining a live session with a PIN. */
+  joinRateLimitMax: number;
+  joinRateLimitWindowMinutes: number;
+  /** A live session closes by itself this long after it was created. */
+  sessionTtlMinutes: number;
+  /** A student whose stream drops is marked as left only after this many seconds without reconnecting. */
+  sessionPresenceGraceSeconds: number;
   corsOrigins: string[];
   /** Serve Swagger UI at /docs. Off in production unless DOCS_ENABLED=true. */
   docsEnabled: boolean;
@@ -65,6 +72,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     bcryptCost: readInt(env, "BCRYPT_COST", 12, 4, 15, problems),
     loginRateLimitMax: readInt(env, "LOGIN_RATE_LIMIT_MAX", 10, 1, 1000, problems),
     loginRateLimitWindowMinutes: readInt(env, "LOGIN_RATE_LIMIT_WINDOW_MINUTES", 15, 1, 1440, problems),
+    joinRateLimitMax: readInt(env, "JOIN_RATE_LIMIT_MAX", 10, 1, 1000, problems),
+    joinRateLimitWindowMinutes: readInt(env, "JOIN_RATE_LIMIT_WINDOW_MINUTES", 1, 1, 1440, problems),
+    sessionTtlMinutes: readInt(env, "SESSION_TTL_MINUTES", 240, 5, 1440, problems),
+    sessionPresenceGraceSeconds: readInt(env, "SESSION_PRESENCE_GRACE_SECONDS", 10, 0, 600, problems),
     corsOrigins,
     docsEnabled: docsFlag ? docsFlag === "true" : nodeEnv !== "production",
   };

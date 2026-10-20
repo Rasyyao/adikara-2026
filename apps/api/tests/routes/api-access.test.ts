@@ -12,7 +12,19 @@ const PUBLIC_ROUTES = [
   ["post", PATHS.studentLogin],
 ] as const;
 
-const PROTECTED_ROUTES = [["get", PATHS.me]] as const;
+const ID = "00000000-0000-4000-8000-000000000001";
+const PROTECTED_ROUTES = [
+  ["get", PATHS.me],
+  ["post", "/api/v1/sessions"],
+  ["post", "/api/v1/sessions/join"],
+  ["get", `/api/v1/sessions/${ID}`],
+  ["post", `/api/v1/sessions/${ID}/start`],
+  ["post", `/api/v1/sessions/${ID}/lock`],
+  ["post", `/api/v1/sessions/${ID}/end`],
+  ["delete", `/api/v1/sessions/${ID}/participants/${ID}`],
+  ["get", `/api/v1/sessions/${ID}/attendance`],
+  ["get", `/api/v1/sessions/${ID}/events`],
+] as const;
 
 describe("API route access (real route table)", () => {
   it.each(PUBLIC_ROUTES)("%s %s does not require a token", async (method, path) => {

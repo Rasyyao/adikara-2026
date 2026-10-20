@@ -91,6 +91,7 @@ model Teacher {
   role         Role        @default(TEACHER)
   createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz
   classrooms   Classroom[]
+  sessions     ClassSession[]
   materials    Material[]
   packages     Package[]
 
@@ -107,6 +108,7 @@ model Classroom {
   createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz
   teacher    Teacher        @relation(fields: [teacherId], references: [id])
   students   Student[]
+  sessions   ClassSession[]
   packages   ClassPackage[]
 
   @@index([teacherId])
@@ -127,9 +129,58 @@ model Student {
   attempts            Attempt[]
   practiceSubmissions PracticeSubmission[]
   diagnoses           Diagnosis[]
+  sessionParticipants SessionParticipant[]
 
   @@index([classId])
   @@map("students")
+}
+
+// ---------- Sesi kelas live ----------
+
+enum SessionStatus {
+  LOBBY
+  ACTIVE
+  ENDED
+
+  @@map("session_status")
+}
+
+/// One live class meeting. `joinCode` is the 6-digit PIN students type; it is set to NULL when the session ends,
+/// so the PIN can be reused later (NULLs do not collide in a unique index).
+model ClassSession {
+  id           String               @id @default(uuid()) @db.Uuid
+  classId      String               @map("class_id") @db.Uuid
+  teacherId    String               @map("teacher_id") @db.Uuid
+  joinCode     String?              @unique @map("join_code")
+  status       SessionStatus        @default(LOBBY)
+  locked       Boolean              @default(false)
+  startedAt    DateTime?            @map("started_at") @db.Timestamptz
+  endedAt      DateTime?            @map("ended_at") @db.Timestamptz
+  expiresAt    DateTime             @map("expires_at") @db.Timestamptz
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  classroom    Classroom            @relation(fields: [classId], references: [id])
+  teacher      Teacher              @relation(fields: [teacherId], references: [id])
+  participants SessionParticipant[]
+
+  @@index([classId, status])
+  @@index([teacherId])
+  @@map("class_sessions")
+}
+
+/// Attendance: one row per student per session.
+model SessionParticipant {
+  id        String       @id @default(uuid()) @db.Uuid
+  sessionId String       @map("session_id") @db.Uuid
+  studentId String       @map("student_id") @db.Uuid
+  joinedAt  DateTime     @default(now()) @map("joined_at") @db.Timestamptz
+  leftAt    DateTime?    @map("left_at") @db.Timestamptz
+  kickedAt  DateTime?    @map("kicked_at") @db.Timestamptz
+  session   ClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@map("session_participants")
 }
 
 // ---------- Materi dan paket ----------

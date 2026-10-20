@@ -12,6 +12,10 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     bcryptCost: 4, // fast hashing for tests only
     loginRateLimitMax: 1000,
     loginRateLimitWindowMinutes: 15,
+    joinRateLimitMax: 1000,
+    joinRateLimitWindowMinutes: 1,
+    sessionTtlMinutes: 240,
+    sessionPresenceGraceSeconds: 0,
     corsOrigins: ["http://localhost:3000"],
     docsEnabled: true,
     ...overrides,

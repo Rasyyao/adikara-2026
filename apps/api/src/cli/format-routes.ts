@@ -5,6 +5,7 @@ import type { RouteGroup } from "../routes/types.js";
 export interface FormatOptions {
   color?: boolean;
   feature?: string;
+  role?: string;
   access?: string;
 }
 
@@ -14,6 +15,7 @@ const METHOD_COLOR: Record<string, keyof typeof COLORS> = { get: "green", post: 
 const ACCESS_COLOR: Record<string, keyof typeof COLORS> = { public: "green", authenticated: "cyan", student: "yellow", staff: "yellow", admin: "red" };
 
 export interface RouteRow {
+  role: string;
   feature: string;
   method: string;
   uri: string;
@@ -22,13 +24,15 @@ export interface RouteRow {
   summary: string;
 }
 
-export function toRows(groups: RouteGroup[], filter: Pick<FormatOptions, "feature" | "access"> = {}): RouteRow[] {
+export function toRows(groups: RouteGroup[], filter: Pick<FormatOptions, "feature" | "role" | "access"> = {}): RouteRow[] {
   return groups
     .filter((group) => !filter.feature || group.feature === filter.feature)
+    .filter((group) => !filter.role || group.role === filter.role)
     .flatMap((group) =>
       group.routes
         .filter((route) => !filter.access || route.access === filter.access)
         .map((route) => ({
+          role: group.role,
           feature: group.feature,
           method: route.method.toUpperCase(),
           uri: `${API_PREFIX}${route.path}`,
@@ -39,7 +43,7 @@ export function toRows(groups: RouteGroup[], filter: Pick<FormatOptions, "featur
     );
 }
 
-/** Plain-text route list grouped by feature, like `php artisan route:list`. */
+/** Plain-text route list grouped by role and feature, like `php artisan route:list`. */
 export function formatRouteTable(groups: RouteGroup[], options: FormatOptions = {}): string {
   const rows = toRows(groups, options);
   if (rows.length === 0) return "No routes found.";
@@ -50,11 +54,13 @@ export function formatRouteTable(groups: RouteGroup[], options: FormatOptions = 
   const w = { method: width((r) => r.method), uri: width((r) => r.uri), access: width((r) => r.access), mw: width((r) => r.middleware) };
 
   const lines: string[] = [];
-  const features = [...new Set(rows.map((row) => row.feature))];
-  for (const feature of features) {
-    const description = groups.find((group) => group.feature === feature)?.description ?? "";
-    lines.push("", `  ${paint(feature, "bold")}  ${paint(description, "dim")}`);
-    for (const row of rows.filter((r) => r.feature === feature)) {
+  // one block per role + feature, e.g. "teacher/sessions", in declaration order
+  const keyOf = (row: Pick<RouteRow, "role" | "feature">) => `${row.role}/${row.feature}`;
+  const blocks = [...new Set(rows.map(keyOf))];
+  for (const key of blocks) {
+    const description = groups.find((group) => `${group.role}/${group.feature}` === key)?.description ?? "";
+    lines.push("", `  ${paint(key, "bold")}  ${paint(description, "dim")}`);
+    for (const row of rows.filter((r) => keyOf(r) === key)) {
       lines.push(
         "    " +
           [
@@ -67,6 +73,6 @@ export function formatRouteTable(groups: RouteGroup[], options: FormatOptions = 
       );
     }
   }
-  lines.push("", `  ${rows.length} route${rows.length === 1 ? "" : "s"} in ${features.length} feature${features.length === 1 ? "" : "s"}`, "");
+  lines.push("", `  ${rows.length} route${rows.length === 1 ? "" : "s"} in ${blocks.length} group${blocks.length === 1 ? "" : "s"}`, "");
   return lines.join("\n");
 }
