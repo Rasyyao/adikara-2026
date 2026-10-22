@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import { CenteredLoader } from "@/components/ui/loaders";
 import { getViewer, homeFor } from "@/lib/auth/dal";
 
 async function Dispatch(): Promise<never> {
@@ -10,7 +11,7 @@ async function Dispatch(): Promise<never> {
 /** After login, and for anyone who already has a cookie: send each role to its own area. */
 export default function Beranda() {
   return (
-    <Suspense fallback={<p className="p-8 text-body text-muted">Mengalihkan…</p>}>
+    <Suspense fallback={<CenteredLoader label="Mengalihkan…" />}>
       <Dispatch />
     </Suspense>
   );

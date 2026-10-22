@@ -4,6 +4,7 @@ import { BackLink } from "@/components/session/back-link";
 import { AttendanceReport } from "@/components/session/attendance-report";
 import { StatusChip } from "@/components/session/status-chip";
 import { TeacherLiveSession } from "@/components/session/teacher-live-session";
+import { CenteredLoader } from "@/components/ui/loaders";
 import { ApiError } from "@/lib/api/errors";
 import { classesApi, teacherSessionsApi } from "@/lib/api/endpoints";
 import { requireViewer } from "@/lib/auth/dal";
@@ -48,7 +49,7 @@ async function SessionContent({ params }: { params: Promise<{ id: string }> }) {
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<p className="text-body text-muted">Memuat sesi…</p>}>
+    <Suspense fallback={<CenteredLoader label="Memuat sesi…" />}>
       <SessionContent params={params} />
     </Suspense>
   );

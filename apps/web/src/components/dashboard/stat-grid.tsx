@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, CalendarCheck, Clock, GraduationCap, Presentation, UserCheck, UserX, Users, type LucideIcon } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, CalendarCheck, Clock, GraduationCap, Presentation, UserCheck, UserMinus, UserX, Users, type LucideIcon } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
   classes: GraduationCap,
@@ -7,6 +7,7 @@ const ICONS: Record<string, LucideIcon> = {
   attendance: UserCheck,
   late: Clock,
   absent: UserX,
+  kicked: UserMinus,
   calendar: CalendarCheck,
 };
 
@@ -14,7 +15,7 @@ interface Stat {
   label: string;
   value: string;
   /** Percentage change against the previous period. 0 shows no badge. */
-  delta: number;
+  delta?: number;
   hint: string;
   icon: string;
 }
@@ -48,7 +49,7 @@ export function StatGrid({ stats }: { stats: readonly Stat[] }) {
             </div>
             <dd className="mt-4 flex flex-wrap items-center gap-2">
               <span className="font-heading text-display font-semibold text-ink">{stat.value}</span>
-              <Delta value={stat.delta} />
+              <Delta value={stat.delta ?? 0} />
             </dd>
             <p className="mt-2 text-caption text-muted">{stat.hint}</p>
           </div>

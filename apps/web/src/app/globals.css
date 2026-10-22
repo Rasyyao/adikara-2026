@@ -53,9 +53,17 @@ h1, h2, h3 {
   color: var(--ink);
 }
 
-:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
+/* In the base layer so a utility such as `outline-none` can still override it, for inputs whose wrapper shows the focus. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+}
+
+/* For inputs inside a wrapper that already shows the focus (its border changes), so the browser box is not drawn twice. */
+.focus-bare:focus-visible {
+  outline: none;
 }
 
 /* ---- Board background: graph-paper grid that drifts slowly -------------------------------- */

@@ -154,7 +154,7 @@ export function DashboardShell({
           <label className="hidden h-11 w-full max-w-[320px] items-center gap-2 rounded-md border border-border bg-bg px-3 text-muted focus-within:border-primary md:flex">
             <Search size={20} strokeWidth={1.75} aria-hidden="true" />
             <span className="sr-only">Cari</span>
-            <input type="search" placeholder="Cari kelas atau sesi…" className="min-w-0 flex-1 bg-transparent text-small text-ink outline-none placeholder:text-muted" />
+            <input type="search" placeholder="Cari kelas atau sesi…" className="min-w-0 flex-1 bg-transparent text-small text-ink focus-bare outline-none placeholder:text-muted" />
             <kbd className="rounded-sm border border-border bg-surface px-1.5 text-caption font-medium">⌘K</kbd>
           </label>
           <div className="ml-auto flex items-center gap-2">

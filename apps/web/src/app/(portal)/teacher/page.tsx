@@ -3,6 +3,7 @@ import { LiveSessionBanner } from "@/components/dashboard/live-session-banner";
 import { AttendanceChart } from "@/components/dashboard/attendance-chart";
 import { ClassList } from "@/components/dashboard/class-list";
 import { PageHeader, Panel } from "@/components/dashboard/page-header";
+import { InlineLoader } from "@/components/ui/loaders";
 import { StatGrid } from "@/components/dashboard/stat-grid";
 import { SessionsTable } from "@/components/dashboard/teacher-tables";
 import { requireViewer } from "@/lib/auth/dal";
@@ -19,7 +20,7 @@ async function Greeting() {
 export default function TeacherDashboardPage() {
   return (
     <div className="flex flex-col gap-6">
-      <Suspense fallback={<PageHeader title="Dashboard" />}>
+      <Suspense fallback={<InlineLoader label="Memuat dashboard…" />}>
         <Greeting />
       </Suspense>
 
@@ -38,9 +39,7 @@ export default function TeacherDashboardPage() {
         </Panel>
       </div>
 
-      <Panel title="Sesi terbaru">
-        <SessionsTable rows={TEACHER_SESSIONS.slice(0, 5)} />
-      </Panel>
+      <SessionsTable title="Sesi terbaru" rows={TEACHER_SESSIONS.slice(0, 5)} />
     </div>
   );
 }

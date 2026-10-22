@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { CenteredLoader } from "@/components/ui/loaders";
 import { StudentWaitingRoom } from "@/components/session/student-waiting-room";
 import { requireViewer } from "@/lib/auth/dal";
 import { isUuid } from "@/lib/validation/auth";
@@ -20,7 +21,7 @@ async function Room({ params }: { params: Promise<{ id: string }> }) {
 export default function SiswaSessionPage({ params }: { params: Promise<{ id: string }> }) {
   return (
     <div className="flex min-h-[calc(100dvh-160px)] w-full items-center justify-center">
-      <Suspense fallback={<p className="text-body text-muted">Memuat sesi…</p>}>
+      <Suspense fallback={<CenteredLoader label="Membuka sesi…" />}>
         <Room params={params} />
       </Suspense>
     </div>
