@@ -1,26 +1,237 @@
 @import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@import "../styles/tokens.css";
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-tint: var(--primary-tint);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-heading: var(--font-poppins), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* Type scale from DESIGN.md section 3 */
+  --text-display: 30px;
+  --text-display--line-height: 1.25;
+  --text-h1: 24px;
+  --text-h1--line-height: 1.25;
+  --text-h2: 20px;
+  --text-h2--line-height: 1.25;
+  --text-body: 16px;
+  --text-body--line-height: 1.5;
+  --text-small: 14px;
+  --text-small--line-height: 1.5;
+  --text-caption: 13px;
+  --text-caption--line-height: 1.5;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--bg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-heading);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ---- Board background: graph-paper grid that drifts slowly -------------------------------- */
+
+.board {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  --cell: 48px;
+  --grid-minor: #ebe6f1;
+  --grid-major: #ddd6e8;
+}
+
+/* One oversized layer holds the grid lines and the lit cells, so they drift together.
+   It moves exactly one cell and loops, which makes the loop seamless. */
+.board__layer {
+  position: absolute;
+  inset: calc(var(--cell) * -4);
+  background-image:
+    linear-gradient(to right, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(to right, var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-minor) 1px, transparent 1px);
+  background-size:
+    calc(var(--cell) * 4) calc(var(--cell) * 4),
+    calc(var(--cell) * 4) calc(var(--cell) * 4),
+    var(--cell) var(--cell),
+    var(--cell) var(--cell);
+  animation: board-drift 40s linear infinite;
+}
+
+.board__cell {
+  position: absolute;
+  border: 1px solid var(--primary);
+  width: var(--cell);
+  height: var(--cell);
+  background: var(--primary-tint);
+  opacity: 0;
+  animation: board-cell 9s var(--ease) infinite;
+}
+
+@keyframes board-drift {
+  to {
+    transform: translate(calc(var(--cell) * 4), calc(var(--cell) * 4));
+  }
+}
+
+@keyframes board-cell {
+  0%, 100% { opacity: 0; }
+  35%, 55% { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board__layer,
+  .board__cell {
+    animation: none;
+  }
+  .board__cell {
+    opacity: 0.6;
+  }
+}
+
+
+/* ---- Role toggle: the white pill slides (with a small overshoot) between the two options ---- */
+/* Kept even with "reduce motion": it is feedback for a tap, covers a short distance and does not loop. */
+
+.toggle__thumb {
+  transition: transform 320ms cubic-bezier(0.34, 1.35, 0.64, 1);
+}
+
+.toggle__icon {
+  transition: transform 320ms cubic-bezier(0.34, 1.8, 0.64, 1);
+}
+
+.toggle__option[data-active="true"] .toggle__icon {
+  transform: scale(1.18) rotate(-6deg);
+}
+
+/* ---- Toast ---------------------------------------------------------------------------------- */
+
+.toast {
+  animation: toast-in 200ms var(--ease) both;
+}
+
+.toast[data-closing] {
+  animation: toast-out 200ms var(--ease) both;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-12px); }
+}
+
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(-12px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .toast[data-closing] {
+    animation-name: toast-fade;
+  }
+  @keyframes toast-fade {
+    from { opacity: 0; }
+  }
+}
+
+/* ---- Error modal ---------------------------------------------------------------------------- */
+/* These are one-shot and short, so they stay on with "reduce motion"; only the wiggle is dropped there. */
+
+.error-modal[open]::backdrop {
+  animation: modal-backdrop-in 220ms var(--ease) both;
+}
+
+.error-modal[open] .error-modal__card {
+  animation: modal-pop 380ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+.error-modal[open] .error-modal__icon {
+  animation:
+    icon-pop 480ms cubic-bezier(0.34, 1.8, 0.64, 1) 140ms both,
+    icon-wiggle 520ms ease-in-out 640ms both;
+}
+
+.error-modal[open] .error-modal__ring {
+  animation: icon-ring 800ms var(--ease) 200ms both;
+}
+
+.error-modal[data-closing]::backdrop {
+  animation: modal-backdrop-out 160ms var(--ease) both;
+}
+
+.error-modal[data-closing] .error-modal__card {
+  animation: modal-leave 160ms var(--ease) both;
+}
+
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+}
+
+@keyframes modal-backdrop-out {
+  to { opacity: 0; }
+}
+
+@keyframes modal-pop {
+  from { opacity: 0; transform: translateY(24px) scale(0.88); }
+}
+
+@keyframes modal-leave {
+  to { opacity: 0; transform: translateY(8px) scale(0.96); }
+}
+
+@keyframes icon-pop {
+  from { opacity: 0; transform: scale(0.2) rotate(-20deg); }
+}
+
+@keyframes icon-wiggle {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-10deg); }
+  40% { transform: rotate(8deg); }
+  60% { transform: rotate(-5deg); }
+  80% { transform: rotate(3deg); }
+}
+
+@keyframes icon-ring {
+  from { opacity: 0.6; transform: scale(0.9); }
+  to { opacity: 0; transform: scale(2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .error-modal[open] .error-modal__icon {
+    animation: icon-pop 480ms cubic-bezier(0.34, 1.8, 0.64, 1) 140ms both;
+  }
+  .error-modal[open] .error-modal__ring {
+    animation: none;
+    opacity: 0;
+  }
 }
