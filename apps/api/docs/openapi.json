@@ -2418,6 +2418,116 @@
       }
     },
     "/sessions": {
+      "get": {
+        "tags": [
+          "Teacher · sessions"
+        ],
+        "summary": "My live sessions",
+        "description": "Sessions that have not ended (LOBBY or ACTIVE), newest first, with the class name and how many students are in. A teacher gets their own; an admin gets every teacher's. Use it to find the session to go back to after a page reload.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "get_sessions",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Required. Only `live` is supported.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "live"
+              ]
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The live sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSessionList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      },
       "post": {
         "tags": [
           "Teacher · sessions"
@@ -4027,6 +4137,41 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "LiveSession": {
+        "type": "object",
+        "required": [
+          "session",
+          "class_name",
+          "joined_count"
+        ],
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/SessionView"
+          },
+          "class_name": {
+            "type": "string",
+            "example": "X RPL 1"
+          },
+          "joined_count": {
+            "type": "integer",
+            "description": "Students currently in the session (kicked ones excluded)."
+          }
+        }
+      },
+      "LiveSessionList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveSession"
+            }
           }
         }
       },

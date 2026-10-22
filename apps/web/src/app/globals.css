@@ -136,77 +136,52 @@ h1, h2, h3 {
   transform: scale(1.18) rotate(-6deg);
 }
 
-/* ---- Toast ---------------------------------------------------------------------------------- */
+/* ---- Overlays: toast and modal share one enter/exit motion so they feel like the same family ---- */
 
-.toast {
-  animation: toast-in 200ms var(--ease) both;
+.toast,
+.modal[open] .modal__card {
+  animation: overlay-in 200ms var(--ease) both;
 }
 
-.toast[data-closing] {
-  animation: toast-out 200ms var(--ease) both;
+.toast[data-closing],
+.modal[data-closing] .modal__card {
+  animation: overlay-out 200ms var(--ease) both;
 }
 
-@keyframes toast-in {
+.modal[open]::backdrop {
+  animation: backdrop-in 200ms var(--ease) both;
+}
+
+.modal[data-closing]::backdrop {
+  animation: backdrop-out 200ms var(--ease) both;
+}
+
+@keyframes overlay-in {
   from { opacity: 0; transform: translateY(-12px); }
 }
 
-@keyframes toast-out {
+@keyframes overlay-out {
   to { opacity: 0; transform: translateY(-12px); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .toast,
-  .toast[data-closing] {
-    animation-name: toast-fade;
-  }
-  @keyframes toast-fade {
-    from { opacity: 0; }
-  }
+@keyframes backdrop-in {
+  from { opacity: 0; }
 }
 
-/* ---- Error modal ---------------------------------------------------------------------------- */
-/* These are one-shot and short, so they stay on with "reduce motion"; only the wiggle is dropped there. */
-
-.error-modal[open]::backdrop {
-  animation: modal-backdrop-in 220ms var(--ease) both;
+@keyframes backdrop-out {
+  to { opacity: 0; }
 }
 
-.error-modal[open] .error-modal__card {
-  animation: modal-pop 380ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
-}
+/* The error icon adds a pop, a wiggle and a ring on top. One-shot and short, so they stay on with "reduce motion"; only the wiggle is dropped. */
 
-.error-modal[open] .error-modal__icon {
+.modal[open] .modal__icon {
   animation:
     icon-pop 480ms cubic-bezier(0.34, 1.8, 0.64, 1) 140ms both,
     icon-wiggle 520ms ease-in-out 640ms both;
 }
 
-.error-modal[open] .error-modal__ring {
+.modal[open] .modal__ring {
   animation: icon-ring 800ms var(--ease) 200ms both;
-}
-
-.error-modal[data-closing]::backdrop {
-  animation: modal-backdrop-out 160ms var(--ease) both;
-}
-
-.error-modal[data-closing] .error-modal__card {
-  animation: modal-leave 160ms var(--ease) both;
-}
-
-@keyframes modal-backdrop-in {
-  from { opacity: 0; }
-}
-
-@keyframes modal-backdrop-out {
-  to { opacity: 0; }
-}
-
-@keyframes modal-pop {
-  from { opacity: 0; transform: translateY(24px) scale(0.88); }
-}
-
-@keyframes modal-leave {
-  to { opacity: 0; transform: translateY(8px) scale(0.96); }
 }
 
 @keyframes icon-pop {
@@ -227,10 +202,24 @@ h1, h2, h3 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .error-modal[open] .error-modal__icon {
+  .toast,
+  .modal[open] .modal__card {
+    animation-name: overlay-fade-in;
+  }
+  .toast[data-closing],
+  .modal[data-closing] .modal__card {
+    animation-name: overlay-fade-out;
+  }
+  @keyframes overlay-fade-in {
+    from { opacity: 0; }
+  }
+  @keyframes overlay-fade-out {
+    to { opacity: 0; }
+  }
+  .modal[open] .modal__icon {
     animation: icon-pop 480ms cubic-bezier(0.34, 1.8, 0.64, 1) 140ms both;
   }
-  .error-modal[open] .error-modal__ring {
+  .modal[open] .modal__ring {
     animation: none;
     opacity: 0;
   }

@@ -1,32 +1,46 @@
 import { Suspense } from "react";
-import { CreateSessionForm } from "@/components/session/create-session-form";
-import { classesApi } from "@/lib/api/endpoints";
+import { LiveSessionBanner } from "@/components/dashboard/live-session-banner";
+import { AttendanceChart } from "@/components/dashboard/attendance-chart";
+import { ClassList } from "@/components/dashboard/class-list";
+import { PageHeader, Panel } from "@/components/dashboard/page-header";
+import { StatGrid } from "@/components/dashboard/stat-grid";
+import { SessionsTable } from "@/components/dashboard/teacher-tables";
 import { requireViewer } from "@/lib/auth/dal";
+import { ATTENDANCE_TREND, TEACHER_CLASSES, TEACHER_SESSIONS, TEACHER_STATS } from "@/lib/dummy/teacher";
 
-export const metadata = { title: "Beranda guru" };
+export const metadata = { title: "Dashboard guru" };
 
-async function TeacherHome() {
-  const { token, user } = await requireViewer("staff");
-  const { items } = await classesApi.list(token);
-
-  return (
-    <div className="mx-auto flex max-w-[720px] flex-col gap-6">
-      <div>
-        <h1 className="text-h1 font-semibold">Halo, {user.name ?? "Guru"}</h1>
-        <p className="mt-1 text-body text-muted">Mulai sesi baru untuk salah satu kelas Anda.</p>
-      </div>
-      <section aria-label="Mulai sesi" className="rounded-lg border border-border bg-surface p-6">
-        <h2 className="mb-4 text-h3 font-semibold">Mulai sesi baru</h2>
-        <CreateSessionForm classes={items} />
-      </section>
-    </div>
-  );
+async function Greeting() {
+  const { user } = await requireViewer("staff");
+  return <PageHeader title={`Halo, ${user.name ?? "Guru"}`} description="Ringkasan kelas dan sesi Anda hari ini." />;
 }
 
-export default function GuruPage() {
+/** Everything here is dummy data. The start-session action lives in the sidebar. */
+export default function TeacherDashboardPage() {
   return (
-    <Suspense fallback={<p className="text-body text-muted">Memuat kelas Anda…</p>}>
-      <TeacherHome />
-    </Suspense>
+    <div className="flex flex-col gap-6">
+      <Suspense fallback={<PageHeader title="Dashboard" />}>
+        <Greeting />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <LiveSessionBanner />
+      </Suspense>
+
+      <StatGrid stats={TEACHER_STATS} />
+
+      <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+        <Panel title="Kehadiran 7 sesi terakhir">
+          <AttendanceChart points={ATTENDANCE_TREND} />
+        </Panel>
+        <Panel title="Kelas Anda">
+          <ClassList rows={TEACHER_CLASSES} />
+        </Panel>
+      </div>
+
+      <Panel title="Sesi terbaru">
+        <SessionsTable rows={TEACHER_SESSIONS.slice(0, 5)} />
+      </Panel>
+    </div>
   );
 }

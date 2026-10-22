@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import type { ParticipantView, SessionStatus, SessionView } from "@/lib/api/types";
 import { ConnectionBadge } from "./connection-badge";
+import { BackLink } from "./back-link";
 import { StatusChip } from "./status-chip";
 import { useSessionStream, type StreamHandler } from "./use-session-stream";
 
@@ -124,8 +125,9 @@ export function TeacherLiveSession({ sessionId, className, initial }: Props) {
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-small text-muted">Sesi kelas</p>
-          <h1 className="text-h1 font-semibold">{className}</h1>
+          <BackLink />
+          <h1 className="mt-2 text-h1 font-semibold">{className}</h1>
+          <p className="mt-1 text-body text-muted">Sesi sedang dibuka. Tampilkan PIN dan pantau siswa yang masuk.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusChip status={live.status} />
@@ -133,15 +135,15 @@ export function TeacherLiveSession({ sessionId, className, initial }: Props) {
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <section aria-label="PIN sesi" className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-6">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <section aria-label="PIN sesi" className="flex flex-col gap-4 rounded-lg bg-surface p-6">
           <div>
             <h2 className="text-h3 font-semibold">PIN untuk siswa</h2>
             <p className="mt-1 text-small text-muted">Tampilkan PIN ini di papan. Siswa memasukkannya setelah masuk sebagai Siswa.</p>
           </div>
           <p
             aria-label={`PIN ${live.joinCode?.split("").join(" ") ?? ""}`}
-            className="rounded-md border border-border bg-primary-tint py-4 text-center font-mono text-display font-medium tracking-[0.3em] text-primary"
+            className="rounded-md border bg-primary-tint py-4 text-center font-mono text-display font-medium tracking-[0.3em] text-primary"
           >
             {live.joinCode ?? "—"}
           </p>
@@ -177,7 +179,7 @@ export function TeacherLiveSession({ sessionId, className, initial }: Props) {
           </div>
         </section>
 
-        <section aria-label="Siswa yang bergabung" className="rounded-lg border border-border bg-surface p-6">
+        <section aria-label="Siswa yang bergabung" className="rounded-lg bg-surface p-6">
           <div className="flex items-center gap-2">
             <Users size={20} strokeWidth={1.75} aria-hidden="true" />
             <h2 className="text-h3 font-semibold">Siswa bergabung ({joined.length})</h2>
@@ -188,7 +190,7 @@ export function TeacherLiveSession({ sessionId, className, initial }: Props) {
               Belum ada siswa. Nama mereka muncul di sini begitu memasukkan PIN.
             </p>
           ) : (
-            <ul className="mt-4 flex flex-col divide-y divide-border">
+            <ul className="mt-4 flex max-h-[480px] flex-col divide-y divide-border overflow-y-auto">
               {live.participants.map((student) => (
                 <li key={student.student_id} className="flex items-center justify-between gap-3 py-3">
                   <div className="min-w-0">

@@ -19,16 +19,16 @@ export function AttendanceReport({ attendance }: { attendance: Attendance }) {
 
   return (
     <section aria-label="Laporan kehadiran" className="flex flex-col gap-4">
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {tiles.map(([label, value]) => (
-          <div key={label} className="rounded-md border border-border bg-surface p-4">
+          <div key={label} className="rounded-lg bg-surface p-4">
             <dt className="text-small text-muted">{label}</dt>
             <dd className="font-heading text-display font-semibold">{value}</dd>
           </div>
         ))}
       </dl>
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+      <div className="overflow-x-auto rounded-lg bg-surface">
         <table className="w-full text-left text-body">
           <caption className="sr-only">Kehadiran {summary.total} siswa</caption>
           <thead>

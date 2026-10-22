@@ -1,7 +1,7 @@
 import { ref } from "../../docs/schemas.js";
 import { requireAuth } from "../../http/middleware/authenticate.js";
 import { parseUuidParam } from "../../http/validators/shared/common.js";
-import { parseCreateSession, parseLock } from "../../http/validators/teacher/session.js";
+import { parseCreateSession, parseLock, parseSessionListQuery } from "../../http/validators/teacher/session.js";
 import type { TeacherSessionService } from "../../services/teacher/session.service.js";
 import { errorDoc } from "../docs-helpers.js";
 import type { RouteGroup } from "../types.js";
@@ -19,6 +19,23 @@ export function teacherSessionRoutes(service: TeacherSessionService): RouteGroup
       "Run a live class session with a PIN (like Kahoot) and read attendance. " +
       "Flow: `POST /sessions` → students `POST /sessions/join` → everyone opens `GET /sessions/{id}/events` → start / lock / end.",
     routes: [
+      {
+        method: "get",
+        path: "/sessions",
+        access: "staff",
+        handler: async (req, res) => {
+          parseSessionListQuery(req.query);
+          res.json(await service.listLiveSessions(requireAuth(req)));
+        },
+        doc: {
+          summary: "My live sessions",
+          description:
+            "Sessions that have not ended (LOBBY or ACTIVE), newest first, with the class name and how many students are in. " +
+            "A teacher gets their own; an admin gets every teacher's. Use it to find the session to go back to after a page reload.",
+          query: [{ name: "status", description: "Required. Only `live` is supported.", schema: { type: "string", enum: ["live"] } }],
+          responses: { 200: { description: "The live sessions", schema: ref("LiveSessionList") } },
+        },
+      },
       {
         method: "post",
         path: "/sessions",

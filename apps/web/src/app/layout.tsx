@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Poppins } from "next/font/google";
-import { BoardBackground } from "@/components/board-background";
 import { ToastProvider } from "@/components/ui/toast";
 import "./globals.css";
 
@@ -17,7 +16,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="id" className={`${inter.variable} ${poppins.variable} ${jetbrainsMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <BoardBackground />
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>

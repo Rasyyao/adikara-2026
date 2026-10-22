@@ -7,6 +7,7 @@ import { bearer } from "./identities.js";
 
 export const SESSION_PATHS = {
   create: "/api/v1/sessions",
+  live: "/api/v1/sessions?status=live",
   join: "/api/v1/sessions/join",
   one: (id: string) => `/api/v1/sessions/${id}`,
   start: (id: string) => `/api/v1/sessions/${id}/start`,

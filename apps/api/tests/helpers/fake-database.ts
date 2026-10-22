@@ -323,6 +323,12 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
         async findOpenSessionByClass(classId) {
           return [...sessions.values()].find((s) => s.classId === classId && s.status !== "ENDED") ?? null;
         },
+        async listOpenSessions(teacherId) {
+          return [...sessions.values()]
+            .filter((s) => s.status !== "ENDED" && (!teacherId || s.teacherId === teacherId))
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+            .map((session) => ({ session, className: classesById.get(session.classId)?.name ?? "" }));
+        },
         async createSession(data) {
           if ([...sessions.values()].some((s) => s.joinCode === data.joinCode)) return null;
           const record: SessionRecord = {

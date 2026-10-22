@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Button } from "./button";
+import { Modal } from "./modal";
 
 interface Props {
   open: boolean;
@@ -13,28 +14,15 @@ interface Props {
   onCancel: () => void;
 }
 
-/** Native <dialog>: focus is trapped, Escape closes it, and the page behind is inert. */
 export function ConfirmDialog({ open, title, children, confirmLabel, loading, onConfirm, onCancel }: Props) {
-  const ref = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
-
   return (
-    <dialog
-      ref={ref}
-      onCancel={(event) => {
-        event.preventDefault();
-        onCancel();
-      }}
-      className="m-auto w-[calc(100%-32px)] max-w-md rounded-lg border border-border bg-surface p-6 text-ink shadow-[var(--shadow-overlay)] backdrop:bg-ink/40"
-    >
-      <h2 className="text-h2 font-semibold">{title}</h2>
-      <div className="mt-2 text-body text-muted">{children}</div>
+    <Modal open={open} onClose={onCancel} labelledBy="confirm-title" describedBy="confirm-message" role="alertdialog">
+      <h2 id="confirm-title" className="text-h2 font-semibold text-ink">
+        {title}
+      </h2>
+      <div id="confirm-message" className="mt-2 text-body text-muted">
+        {children}
+      </div>
       <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <Button variant="secondary" onClick={onCancel} disabled={loading}>
           Batal
@@ -43,6 +31,6 @@ export function ConfirmDialog({ open, title, children, confirmLabel, loading, on
           {confirmLabel}
         </Button>
       </div>
-    </dialog>
+    </Modal>
   );
 }

@@ -31,7 +31,15 @@ export interface Attendance {
 }
 
 /** Managing live sessions: for teachers (their own classes) and admins (any class). */
+export interface LiveSession {
+  session: SessionView;
+  class_name: string;
+  joined_count: number;
+}
+
 export interface TeacherSessionService {
+  /** The caller's sessions that have not ended: all of them for an admin. Expired ones are closed and left out. */
+  listLiveSessions(auth: AuthContext): Promise<{ items: LiveSession[] }>;
   createSession(auth: AuthContext, classCode: string): Promise<SessionDetail>;
   getSession(auth: AuthContext, sessionId: string): Promise<SessionDetail>;
   startSession(auth: AuthContext, sessionId: string): Promise<{ session: SessionView }>;
@@ -88,6 +96,21 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
   }
 
   return {
+    async listLiveSessions(auth) {
+      core.assertStaff(auth);
+      const open = await repository.listOpenSessions(auth.role === "TEACHER" ? auth.userId : undefined);
+      const current = await Promise.all(open.map(async (row) => ({ ...row, session: await core.closeIfExpired(row.session) })));
+      const live = current.filter((row) => row.session.status !== "ENDED");
+      const items = await Promise.all(
+        live.map(async ({ session, className }) => ({
+          session: toSessionView(session),
+          class_name: className,
+          joined_count: await core.countJoined(session.id),
+        })),
+      );
+      return { items };
+    },
+
     async createSession(auth, classCode) {
       core.assertStaff(auth);
       const classroom = await repository.findClassroomByCode(classCode);

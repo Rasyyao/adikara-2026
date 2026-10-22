@@ -26,6 +26,15 @@ export function createTeacherSessionRepository(prisma: PrismaClient): TeacherSes
       });
     },
 
+    async listOpenSessions(teacherId) {
+      const rows = await prisma.classSession.findMany({
+        where: { status: { not: "ENDED" }, ...(teacherId ? { teacherId } : {}) },
+        orderBy: { createdAt: "desc" },
+        include: { classroom: { select: { name: true } } },
+      });
+      return rows.map(({ classroom, ...session }) => ({ session, className: classroom.name }));
+    },
+
     async createSession(data) {
       try {
         return await prisma.classSession.create({ data });

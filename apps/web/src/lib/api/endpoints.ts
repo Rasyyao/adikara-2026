@@ -5,6 +5,7 @@ import type {
   ClassView,
   EndSessionResponse,
   JoinResult,
+  LiveSession,
   LoginResult,
   PublicUser,
   SessionDetail,
@@ -26,6 +27,8 @@ export const classesApi = {
 };
 
 export const teacherSessionsApi = {
+  /** The caller's sessions that have not ended (an admin gets every teacher's). */
+  listLive: (token: string) => apiFetch<{ items: LiveSession[] }>("/sessions?status=live", { token }),
   create: (token: string, classCode: string) =>
     apiFetch<SessionDetail>("/sessions", { method: "POST", token, body: { class_code: classCode } }),
   get: (token: string, id: string) => apiFetch<SessionDetail>(`/sessions/${id}`, { token }),

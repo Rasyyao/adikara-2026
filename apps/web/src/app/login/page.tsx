@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { BoardBackground } from "@/components/board-background";
 import { IntroIllustration } from "@/components/auth/intro-illustration";
 import { LoginForm } from "@/components/auth/login-form";
 import { SessionNotice } from "@/components/auth/session-notice";
@@ -7,6 +8,7 @@ import { Logo } from "@/components/logo";
 export default function Home() {
   return (
     <main className="flex flex-1 items-center justify-center px-4 py-8 sm:px-6">
+      <BoardBackground />
       {/* One card, split 50:50. Below lg only the form half is shown, so it comes first on phones. */}
       <div className="grid w-full max-w-[1040px] overflow-hidden rounded-lg border border-border bg-surface lg:grid-cols-2">
         <section aria-label="Tentang Adikara" className="hidden flex-col justify-between gap-8 border-r border-border p-8 lg:flex">

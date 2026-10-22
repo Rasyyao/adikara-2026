@@ -74,6 +74,20 @@ export const schemas = {
       created_at: { type: "string", format: "date-time" },
     },
   },
+  LiveSession: {
+    type: "object",
+    required: ["session", "class_name", "joined_count"],
+    properties: {
+      session: { $ref: "#/components/schemas/SessionView" },
+      class_name: { type: "string", example: "X RPL 1" },
+      joined_count: { type: "integer", description: "Students currently in the session (kicked ones excluded)." },
+    },
+  },
+  LiveSessionList: {
+    type: "object",
+    required: ["items"],
+    properties: { items: { type: "array", items: { $ref: "#/components/schemas/LiveSession" } } },
+  },
   StudentSessionView: {
     type: "object",
     required: ["id", "class_id", "status", "locked", "started_at"],

@@ -25,6 +25,7 @@ const EXPECTED_TAGS: Record<string, string> = {
   "post /auth/login": "Teacher · auth",
   "get /classes": "Teacher · classes",
   "get /classes/{id}": "Teacher · classes",
+  "get /sessions": "Teacher · sessions",
   "post /sessions": "Teacher · sessions",
   "get /sessions/{id}": "Teacher · sessions",
   "post /sessions/{id}/start": "Teacher · sessions",

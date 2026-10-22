@@ -19,7 +19,7 @@ async function Room({ params }: { params: Promise<{ id: string }> }) {
 
 export default function SiswaSessionPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <div className="flex min-h-[calc(100dvh-160px)] items-center justify-center">
+    <div className="flex min-h-[calc(100dvh-160px)] w-full items-center justify-center">
       <Suspense fallback={<p className="text-body text-muted">Memuat sesi…</p>}>
         <Room params={params} />
       </Suspense>

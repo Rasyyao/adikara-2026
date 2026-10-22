@@ -11,6 +11,13 @@ export function parseCreateSession(body: unknown): { classCode: string } {
   return { classCode };
 }
 
+/** `?status=live` is the only filter so far. It is required, so a later `ended` history can be added without changing meaning. */
+export function parseSessionListQuery(query: Record<string, unknown>): { status: "live" } {
+  const raw = Array.isArray(query.status) ? query.status[query.status.length - 1] : query.status;
+  if (raw !== "live") throw validationError({ status: "must be 'live'" });
+  return { status: "live" };
+}
+
 export function parseLock(body: unknown): { locked: boolean } {
   const record = asRecord(body);
   if (typeof record.locked !== "boolean") throw validationError({ locked: "must be true or false" });

@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
 import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "./button";
+import { Modal } from "./modal";
 
 type ToastType = "error" | "success" | "info";
 
@@ -32,7 +33,6 @@ const ToastContext = createContext<ToastApi | null>(null);
 
 const MAX_VISIBLE = 3;
 const EXIT_MS = 200;
-const MODAL_EXIT_MS = 160;
 const DEFAULT_DURATION: Record<ToastType, number> = { error: 6000, success: 4000, info: 5000 };
 
 const STYLE: Record<ToastType, { Icon: typeof Info; tone: string; title: string }> = {
@@ -54,7 +54,9 @@ export function useToast(): ToastApi {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  // The error stays in state after closing so its content is still on screen during the exit animation.
   const [errorModal, setErrorModal] = useState<ToastInput | null>(null);
+  const [errorOpen, setErrorOpen] = useState(false);
   const nextId = useRef(1);
 
   const dismiss = useCallback((id: number) => {
@@ -66,6 +68,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const data = typeof input === "string" ? { message: input } : input;
     if (type === "error") {
       setErrorModal(data); // a newer error replaces the one on screen
+      setErrorOpen(true);
       return;
     }
     setToasts((list) => {
@@ -87,7 +90,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <ErrorModal error={errorModal} onClose={() => setErrorModal(null)} />
+      <ErrorModal error={errorModal} open={errorOpen} onClose={() => setErrorOpen(false)} />
       {/* One live region for all toasts, so screen readers announce each new one. */}
       <div
         role="region"
@@ -102,48 +105,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function ErrorModal({ error, onClose }: { error: ToastInput | null; onClose: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (error && !dialog.open) {
-      delete dialog.dataset.closing;
-      dialog.showModal(); // top layer: covers the whole viewport and makes the page inert
-    }
-    if (!error && dialog.open) dialog.close();
-  }, [error]);
-
-  /** Plays the exit animation first, then lets the parent remove the error. */
-  const close = useCallback(() => {
-    const dialog = ref.current;
-    if (!dialog || dialog.dataset.closing) return;
-    dialog.dataset.closing = "true";
-    setTimeout(onClose, MODAL_EXIT_MS);
-  }, [onClose]);
-
+function ErrorModal({ error, open, onClose }: { error: ToastInput | null; open: boolean; onClose: () => void }) {
   return (
-    <dialog
-      ref={ref}
-      aria-labelledby="error-modal-title"
-      aria-describedby="error-modal-message"
-      onCancel={(event) => {
-        event.preventDefault();
-        close();
-      }}
-      // Clicking the dimmed area (the dialog element itself, outside the card) also closes it.
-      onClick={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
-      className="error-modal fixed inset-0 m-auto size-full max-h-none max-w-none bg-transparent p-4 backdrop:bg-black/50 backdrop:backdrop-blur-[2px] open:flex open:items-center open:justify-center"
-    >
+    <Modal open={open} onClose={onClose} labelledBy="error-modal-title" describedBy="error-modal-message" role="alertdialog" className="max-w-[420px] text-center">
       {error && (
-        <div role="alertdialog" className="error-modal__card w-full max-w-[420px] rounded-lg border border-border bg-surface p-6 text-center shadow-[var(--shadow-overlay)]">
+        <>
           {/* The ring pulses once and the icon pops in, then wiggles, so the eye lands here first. */}
           <div className="relative mx-auto flex size-12 items-center justify-center text-danger">
-            <span className="error-modal__ring absolute inset-0 rounded-full border-2 border-danger" aria-hidden="true" />
-            <AlertCircle size={48} strokeWidth={1.75} className="error-modal__icon" aria-hidden="true" />
+            <span className="modal__ring absolute inset-0 rounded-full border-2 border-danger" aria-hidden="true" />
+            <AlertCircle size={48} strokeWidth={1.75} className="modal__icon" aria-hidden="true" />
           </div>
           <h2 id="error-modal-title" className="mt-4 text-h2 font-semibold text-ink">
             {error.title ?? STYLE.error.title}
@@ -155,19 +125,19 @@ function ErrorModal({ error, onClose }: { error: ToastInput | null; onClose: () 
             {error.action && (
               <Link
                 href={error.action.href}
-                onClick={close}
+                onClick={onClose}
                 className="inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-surface px-4 text-body font-semibold text-ink transition-colors duration-150 ease-out hover:bg-primary-tint"
               >
                 {error.action.label}
               </Link>
             )}
-            <Button onClick={close} autoFocus>
+            <Button onClick={onClose} autoFocus>
               Mengerti
             </Button>
           </div>
-        </div>
+        </>
       )}
-    </dialog>
+    </Modal>
   );
 }
 

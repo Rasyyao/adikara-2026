@@ -30,6 +30,7 @@ const TABLE: Record<string, [role: string, access: string]> = {
 
   "get /classes": ["teacher", "staff"],
   "get /classes/:id": ["teacher", "staff"],
+  "get /sessions": ["teacher", "staff"],
   "post /sessions": ["teacher", "staff"],
   "get /sessions/:id": ["teacher", "staff"],
   "post /sessions/:id/start": ["teacher", "staff"],

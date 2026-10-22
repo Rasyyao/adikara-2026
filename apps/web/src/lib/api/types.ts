@@ -42,6 +42,13 @@ export interface SessionView {
   created_at: string;
 }
 
+/** One row of `GET /sessions?status=live`. */
+export interface LiveSession {
+  session: SessionView;
+  class_name: string;
+  joined_count: number;
+}
+
 export interface StudentSessionView {
   id: string;
   class_id: string;

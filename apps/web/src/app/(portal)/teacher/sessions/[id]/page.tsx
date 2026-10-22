@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { BackLink } from "@/components/session/back-link";
 import { AttendanceReport } from "@/components/session/attendance-report";
 import { StatusChip } from "@/components/session/status-chip";
 import { TeacherLiveSession } from "@/components/session/teacher-live-session";
@@ -32,17 +32,13 @@ async function SessionContent({ params }: { params: Promise<{ id: string }> }) {
       <div className="flex flex-col gap-6">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-small text-muted">Laporan kehadiran</p>
-            <h1 className="text-h1 font-semibold">{className}</h1>
+            <BackLink />
+            <h1 className="mt-2 text-h1 font-semibold">{className}</h1>
+            <p className="mt-1 text-body text-muted">Laporan kehadiran sesi ini.</p>
           </div>
           <StatusChip status="ENDED" />
         </header>
         <AttendanceReport attendance={attendance} />
-        <div>
-          <Link href="/teacher" className="inline-flex min-h-11 items-center rounded-md bg-primary px-4 font-semibold text-white hover:bg-primary-hover">
-            Mulai sesi baru
-          </Link>
-        </div>
       </div>
     );
   }
