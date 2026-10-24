@@ -1,3 +1,10 @@
+export interface StorageConfig {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+}
+
 export interface Config {
   nodeEnv: string;
   port: number;
@@ -14,6 +21,10 @@ export interface Config {
   sessionTtlMinutes: number;
   /** A student whose stream drops is marked as left only after this many seconds without reconnecting. */
   sessionPresenceGraceSeconds: number;
+  /** Largest material a teacher may upload, in bytes. */
+  uploadMaxBytes: number;
+  /** Cloudflare R2 (S3 API). Null when not configured: uploads then answer 503, everything else works. */
+  storage: StorageConfig | null;
   corsOrigins: string[];
   /** Serve Swagger UI at /docs. Off in production unless DOCS_ENABLED=true. */
   docsEnabled: boolean;
@@ -57,6 +68,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     problems.push("CORS_ALLOWED_ORIGINS must list explicit origins, not *");
   }
 
+  const r2 = {
+    accountId: env.R2_ACCOUNT_ID ?? "",
+    accessKeyId: env.R2_ACCESS_KEY_ID ?? "",
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? "",
+    bucket: env.R2_BUCKET ?? "",
+  };
+  const r2Set = Object.values(r2).filter(Boolean).length;
+  if (r2Set > 0 && r2Set < 4) {
+    problems.push("R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET must be set together");
+  }
+
   const nodeEnv = env.NODE_ENV ?? "development";
   const docsFlag = env.DOCS_ENABLED;
   if (docsFlag !== undefined && docsFlag !== "" && docsFlag !== "true" && docsFlag !== "false") {
@@ -76,6 +98,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     joinRateLimitWindowMinutes: readInt(env, "JOIN_RATE_LIMIT_WINDOW_MINUTES", 1, 1, 1440, problems),
     sessionTtlMinutes: readInt(env, "SESSION_TTL_MINUTES", 240, 5, 1440, problems),
     sessionPresenceGraceSeconds: readInt(env, "SESSION_PRESENCE_GRACE_SECONDS", 10, 0, 600, problems),
+    uploadMaxBytes: readInt(env, "UPLOAD_MAX_MB", 20, 1, 100, problems) * 1024 * 1024,
+    storage: r2Set === 4 ? r2 : null,
     corsOrigins,
     docsEnabled: docsFlag ? docsFlag === "true" : nodeEnv !== "production",
   };

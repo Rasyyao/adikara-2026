@@ -117,7 +117,7 @@ function buildOperation(group: RouteGroup, route: RouteDefinition): Json {
           requestBody: {
             required: true,
             description: doc.requestBody.description,
-            content: jsonContent(doc.requestBody.schema, doc.requestBody.example),
+            content: jsonContent(doc.requestBody.schema, doc.requestBody.example, doc.requestBody.contentType),
           },
         }
       : {}),

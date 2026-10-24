@@ -1,0 +1,115 @@
+import type { Request, RequestHandler } from "express";
+import { ref } from "../../docs/schemas.js";
+import { requireAuth } from "../../http/middleware/authenticate.js";
+import { parseUuidParam } from "../../http/validators/shared/common.js";
+import { parseCreateChat, parseMessageQuery, parseMessageText, parseOptionalFile } from "../../http/validators/teacher/chat.js";
+import type { TeacherChatService } from "../../services/teacher/chat.service.js";
+import { errorDoc } from "../docs-helpers.js";
+import type { RouteGroup } from "../types.js";
+
+export function teacherChatRoutes(service: TeacherChatService, upload: RequestHandler): RouteGroup {
+  const chatId = (req: Request) => parseUuidParam(req.params.id, "id");
+
+  return {
+    role: "teacher",
+    feature: "chats",
+    description:
+      "A teacher's chats with the AI. Send text, and optionally a PDF/DOCX/PPTX: the file is stored, read by the worker, and used " +
+      "by this chat only. The AI's reply is written by the worker, so poll `GET /chats/{id}/messages` until `reply_pending` is false.",
+    routes: [
+      {
+        method: "post",
+        path: "/chats",
+        access: "staff",
+        handler: async (req, res) => {
+          res.status(201).json(await service.create(requireAuth(req), parseCreateChat(req.body)));
+        },
+        doc: {
+          summary: "Start a chat",
+          requestBody: { schema: ref("CreateChatRequest"), example: { title: "Persiapan kelas 7A" } },
+          responses: { 201: { description: "The new chat", schema: ref("ChatResponse") } },
+        },
+      },
+      {
+        method: "get",
+        path: "/chats",
+        access: "staff",
+        handler: async (req, res) => {
+          res.json(await service.list(requireAuth(req)));
+        },
+        doc: {
+          summary: "My chats",
+          description: "Newest first. An admin sees every chat.",
+          responses: { 200: { description: "The chats", schema: ref("ChatList") } },
+        },
+      },
+      {
+        method: "get",
+        path: "/chats/:id",
+        access: "staff",
+        handler: async (req, res) => {
+          res.json(await service.get(requireAuth(req), chatId(req)));
+        },
+        doc: {
+          summary: "A chat with its materials",
+          description: "Each material shows whether the worker has read it yet (`status`) and why it failed (`error`).",
+          responses: {
+            200: { description: "The chat and its materials", schema: ref("ChatDetail") },
+            404: errorDoc("chat_not_found", "No such chat, or it belongs to another teacher.", "Chat not found"),
+          },
+        },
+      },
+      {
+        method: "get",
+        path: "/chats/:id/messages",
+        access: "staff",
+        handler: async (req, res) => {
+          res.json(await service.messages(requireAuth(req), chatId(req), parseMessageQuery(req.query)));
+        },
+        doc: {
+          summary: "Read the conversation",
+          description:
+            "Without `after`: the latest messages, oldest first. To poll, pass the id of the last message you have as `after` " +
+            "and repeat while `reply_pending` is true.",
+          query: [
+            { name: "limit", description: "1-200, default 50.", schema: { type: "integer", minimum: 1, maximum: 200 } },
+            { name: "after", description: "Id of the last message you already have.", schema: { type: "string", format: "uuid" } },
+          ],
+          responses: {
+            200: { description: "The messages", schema: ref("ChatMessages") },
+            404: errorDoc("chat_not_found", "No such chat, or it belongs to another teacher.", "Chat not found"),
+          },
+        },
+      },
+      {
+        method: "post",
+        path: "/chats/:id/messages",
+        access: "staff",
+        middleware: [upload],
+        handler: async (req, res) => {
+          const text = parseMessageText(req.body);
+          const file = parseOptionalFile(req.file);
+          res.status(202).json(await service.send(requireAuth(req), chatId(req), { text, file }));
+        },
+        doc: {
+          summary: "Send a message (and optionally a file)",
+          description:
+            "Send `text` as JSON, or as multipart form data together with a `file`. A file is stored and read by the worker, " +
+            "then used as knowledge of this chat only. Answers 202 at once: the reply arrives later, see `GET /chats/{id}/messages`. " +
+            "If the file cannot be read, the material shows `FAILED` with the reason and the AI says so in its reply.",
+          requestBody: {
+            contentType: "multipart/form-data",
+            schema: ref("SendMessageRequest"),
+            description: "Plain `application/json` with only `text` is accepted too.",
+          },
+          responses: {
+            202: { description: "Saved; the reply is being written", schema: ref("SendMessageResult") },
+            404: errorDoc("chat_not_found", "No such chat, or it belongs to another teacher.", "Chat not found"),
+            413: errorDoc("file_too_large", "The file is larger than the upload limit.", "File is too large (maximum 20 MB)"),
+            503: errorDoc("storage_unavailable", "File storage is not configured on this server.", "File storage is not configured"),
+          },
+        },
+      },
+    ],
+  };
+}

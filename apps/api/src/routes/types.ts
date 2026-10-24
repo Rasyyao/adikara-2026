@@ -28,7 +28,7 @@ export interface ResponseDoc {
 export interface RouteDoc {
   summary: string;
   description?: string;
-  requestBody?: { description?: string; schema: SchemaObject; example?: unknown };
+  requestBody?: { description?: string; schema: SchemaObject; example?: unknown; /** Defaults to application/json. */ contentType?: string };
   /** Query string parameters, e.g. filters and paging of a list. */
   query?: { name: string; description?: string; schema: SchemaObject }[];
   responses: Record<number, ResponseDoc>;

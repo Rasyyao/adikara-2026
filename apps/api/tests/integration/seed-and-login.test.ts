@@ -9,11 +9,12 @@ import { testConfig } from "../helpers/config.js";
 import { PATHS } from "../helpers/requests.js";
 
 /**
- * Real PostgreSQL. Runs only when TEST_DATABASE_URL points at a database whose name ends in `_test`
+ * Real PostgreSQL. Runs against the local development database (DATABASE_URL) and wipes its tables
  * (create it with scripts/setup-test-db.sh). Otherwise the whole file is skipped.
  */
-const url = process.env.TEST_DATABASE_URL;
-const safe = Boolean(url) && /_test(\?|$)/.test(url as string);
+// the local development database (the same one the Python worker listens on)
+const url = process.env.DATABASE_URL;
+const safe = Boolean(url);
 
 const env = { BCRYPT_COST: "4" }; // everything else: the seed defaults
 

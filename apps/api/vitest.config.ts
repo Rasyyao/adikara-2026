@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 
 try {
-  process.loadEnvFile("../../.env"); // TEST_DATABASE_URL for tests/integration
+  process.loadEnvFile("../../.env"); // DATABASE_URL for tests/integration
 } catch {
   // no .env: integration tests are skipped
 }

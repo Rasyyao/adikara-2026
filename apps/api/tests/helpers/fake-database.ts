@@ -4,6 +4,7 @@ import type { Repositories } from "../../src/repositories/index.js";
 import type { Role } from "../../src/types/auth.types.js";
 import type { ClassRow } from "../../src/types/shared/class.types.js";
 import type { ParticipantRecord, SessionRecord } from "../../src/types/shared/session.types.js";
+import type { ChatMaterialRow, ChatMessageRow, ChatRow, NewMaterial } from "../../src/types/teacher/chat.types.js";
 
 export const PASSWORDS = {
   admin: "Admin-pass-1",
@@ -74,6 +75,13 @@ export interface FakeDatabase {
   studentsWithRecords: Set<string>;
   /** Teachers that own other data (materials, packages). They cannot be deleted. */
   teachersWithData: Set<string>;
+  chats: Map<string, ChatRow>;
+  chatMessages: ChatMessageRow[];
+  /** Materials by id, with the chat they were sent in and the storage key. */
+  materials: Map<string, ChatMaterialRow & NewMaterial & { chatId: string }>;
+  /** The queue: what the API would insert into `jobs`, in order. `notified` counts the NOTIFYs sent after a commit. */
+  jobs: { type: "EXTRACT" | "CHAT_REPLY"; payload: Record<string, string>; status: "QUEUED" | "RUNNING" | "DONE" | "FAILED" }[];
+  queue: { notified: number };
 }
 
 const CREATED = new Date("2026-01-01T00:00:00.000Z");
@@ -134,6 +142,11 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
   const participants = new Map<string, ParticipantRecord & { sessionId: string }>();
   const studentsWithRecords = new Set<string>();
   const teachersWithData = new Set<string>();
+  const chats = new Map<string, ChatRow>();
+  const chatMessages: ChatMessageRow[] = [];
+  const materials: FakeDatabase["materials"] = new Map();
+  const jobs: FakeDatabase["jobs"] = [];
+  const queue = { notified: 0 };
   const key = (sessionId: string, studentId: string) => `${sessionId}:${studentId}`;
 
   const accountOf = (t: { id: string; role: Role; name: string | null; passwordHash: string | null }) => ({
@@ -312,6 +325,48 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
             .map((s) => ({ id: s.id, username: s.username, name: s.name }));
         },
       },
+      chats: {
+        async create(teacherId, title) {
+          const chat = { id: randomUUID(), teacherId, title, createdAt: new Date(Date.now() + chats.size) };
+          chats.set(chat.id, chat);
+          return chat;
+        },
+        async list(teacherId) {
+          return [...chats.values()]
+            .filter((c) => !teacherId || c.teacherId === teacherId)
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        },
+        async findById(id) {
+          return chats.get(id) ?? null;
+        },
+        async listMessages(chatId, { limit, after }) {
+          const all = chatMessages.filter((m) => m.chatId === chatId);
+          if (!after) return all.slice(-limit);
+          const index = all.findIndex((m) => m.id === after);
+          return index === -1 ? [] : all.slice(index + 1, index + 1 + limit);
+        },
+        async listMaterials(chatId) {
+          return [...materials.values()]
+            .filter((m) => m.chatId === chatId)
+            .map(({ id, title, fileType, status, error }) => ({ id, title, fileType, status, error }));
+        },
+        async hasPendingReply(chatId) {
+          return jobs.some((j) => j.type === "CHAT_REPLY" && j.payload.chatId === chatId && (j.status === "QUEUED" || j.status === "RUNNING"));
+        },
+        async addMessage({ chatId, content, material }) {
+          const message: ChatMessageRow = { id: randomUUID(), chatId, role: "USER", content, sources: null, createdAt: new Date(Date.now() + chatMessages.length) };
+          chatMessages.push(message);
+          let row: ChatMaterialRow | null = null;
+          if (material) {
+            row = { id: randomUUID(), title: material.title, fileType: material.fileType, status: "UPLOADED", error: null };
+            materials.set(row.id, { ...row, ...material, chatId });
+            jobs.push({ type: "EXTRACT", payload: { materialId: row.id }, status: "QUEUED" });
+          }
+          jobs.push({ type: "CHAT_REPLY", payload: { chatId, messageId: message.id }, status: "QUEUED" });
+          queue.notified += 1;
+          return { message, material: row };
+        },
+      },
       sessions: {
         async findClassroomByCode(code) {
           const c = [...classesById.values()].find((o) => o.classCode === code);
@@ -416,5 +471,5 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
     },
   };
 
-  return { repositories, teachersById, studentsById, classesById, sessions, participants, studentsWithRecords, teachersWithData };
+  return { repositories, teachersById, studentsById, classesById, sessions, participants, studentsWithRecords, teachersWithData, chats, chatMessages, materials, jobs, queue };
 }

@@ -10,10 +10,11 @@ import { TEST_SECRET } from "../helpers/config.js";
 /**
  * The admin repositories against a real PostgreSQL: unique emails/usernames/class codes, "in use" detection
  * through foreign keys, role filtering, cascade, paging. The in-memory fake cannot prove any of these.
- * Runs only when TEST_DATABASE_URL points at a database whose name ends in `_test`.
+ * Runs against the local development database (DATABASE_URL) and wipes its tables.
  */
-const url = process.env.TEST_DATABASE_URL;
-const safe = Boolean(url) && /_test(\?|$)/.test(url as string);
+// the local development database (the same one the Python worker listens on)
+const url = process.env.DATABASE_URL;
+const safe = Boolean(url);
 
 describe.skipIf(!safe)("admin management against a real database", () => {
   let prisma: PrismaClient;

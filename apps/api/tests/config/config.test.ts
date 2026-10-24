@@ -97,4 +97,42 @@ describe("loadConfig", () => {
       expect(() => loadConfig({ ...valid, CORS_ALLOWED_ORIGINS: "*" })).toThrow(/not \*/);
     });
   });
+
+  describe("file uploads", () => {
+    const r2 = { R2_ACCOUNT_ID: "acc", R2_ACCESS_KEY_ID: "id", R2_SECRET_ACCESS_KEY: "secret", R2_BUCKET: "bucket" };
+
+    it("storage is off and the limit is 20 MB by default", () => {
+      expect(loadConfig(valid)).toMatchObject({ storage: null, uploadMaxBytes: 20 * 1024 * 1024 });
+    });
+
+    it("reads the four R2 settings together, and the upload limit in MB", () => {
+      expect(loadConfig({ ...valid, ...r2, UPLOAD_MAX_MB: "5" })).toMatchObject({
+        storage: { accountId: "acc", accessKeyId: "id", secretAccessKey: "secret", bucket: "bucket" },
+        uploadMaxBytes: 5 * 1024 * 1024,
+      });
+    });
+
+    it.each(Object.keys(r2))("refuses a half-set R2 config (only %s set)", (key) => {
+      expect(() => loadConfig({ ...valid, [key]: r2[key as keyof typeof r2] })).toThrow(/must be set together/);
+    });
+
+    it("refuses R2 config with one value missing, listing it among the problems", () => {
+      const { R2_BUCKET: _omit, ...three } = r2;
+      expect(() => loadConfig({ ...valid, ...three })).toThrow(/R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET/);
+    });
+
+    it.each(["0", "101", "abc", "1.5"])("rejects UPLOAD_MAX_MB=%s", (value) => {
+      expect(() => loadConfig({ ...valid, UPLOAD_MAX_MB: value })).toThrow(/UPLOAD_MAX_MB/);
+    });
+
+    it("never prints the secret key in an error", () => {
+      try {
+        loadConfig({ ...valid, R2_SECRET_ACCESS_KEY: "super-secret-value" });
+      } catch (err) {
+        expect(String(err)).not.toContain("super-secret-value");
+        return;
+      }
+      throw new Error("expected a config error");
+    });
+  });
 });

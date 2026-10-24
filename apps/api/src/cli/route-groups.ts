@@ -15,7 +15,7 @@ function inert<T extends object>(): T {
 export function loadRouteGroupsForTooling(): RouteGroup[] {
   const services: Services = {
     admin: { teachers: inert(), students: inert(), classes: inert() },
-    teacher: { auth: inert(), sessions: inert(), classes: inert() },
+    teacher: { auth: inert(), sessions: inert(), classes: inert(), chats: inert() },
     student: { auth: inert(), sessions: inert() },
     shared: { profile: inert(), sessionStream: inert() },
   };
@@ -26,6 +26,7 @@ export function loadRouteGroupsForTooling(): RouteGroup[] {
       loginRateLimitWindowMinutes: 15,
       joinRateLimitMax: 10,
       joinRateLimitWindowMinutes: 1,
+      uploadMaxBytes: 20 * 1024 * 1024,
     }),
   );
 }

@@ -7,7 +7,7 @@ One folder per role (and per concern), mirroring `src/`. Run them with `apps/api
 | `config/` | environment parsing and fail-fast rules |
 | `health/` | `/healthz`, `/readyz`, 404 shape |
 | `admin/` | admin role: teachers, students and classes endpoints, validators, the class-assignment flow |
-| `teacher/` | teacher role: login, classes, session endpoints, validators, services |
+| `teacher/` | teacher role: login, classes, session endpoints, chats and file upload (route, validators, service), validators, services |
 | `student/` | student role: login, joining a session, validators, services |
 | `shared/` | several roles: `/auth/me`, profile, password, token, SSE stream, session core, event hub, PIN |
 | `middleware/` | `authenticate`, `requireRole`, access guards, error handler |
@@ -16,7 +16,7 @@ One folder per role (and per concern), mirroring `src/`. Run them with `apps/api
 | `cli/` | route list formatting (`pnpm routes`) |
 | `security/` | headers, CORS, rate limiting |
 | `seed/` | the seeder |
-| `integration/` | seed, sessions and admin repositories on a real PostgreSQL |
+| `integration/` | seed, sessions, admin and chat repositories on a real PostgreSQL (run against the local DATABASE_URL, which they wipe) |
 | `helpers/` | fakes and builders shared by tests (not run on their own) |
 
 ## Conventions

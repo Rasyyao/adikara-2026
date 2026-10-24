@@ -30,6 +30,12 @@ const TABLE: Record<string, [role: string, access: string]> = {
 
   "get /classes": ["teacher", "staff"],
   "get /classes/:id": ["teacher", "staff"],
+
+  "post /chats": ["teacher", "staff"],
+  "get /chats": ["teacher", "staff"],
+  "get /chats/:id": ["teacher", "staff"],
+  "get /chats/:id/messages": ["teacher", "staff"],
+  "post /chats/:id/messages": ["teacher", "staff"],
   "get /sessions": ["teacher", "staff"],
   "post /sessions": ["teacher", "staff"],
   "get /sessions/:id": ["teacher", "staff"],
@@ -60,7 +66,7 @@ describe("route table: role and access of every route", () => {
     expect(routes.filter((r) => r.access === "public").map((r) => r.name).sort()).toEqual(["post /auth/login", "post /auth/student/login"]);
   });
 
-  it("rate limits: logins use the login limiter, joining uses the join limiter, nothing else is limited", () => {
+  it("rate limits: logins use the login limiter, joining uses the join limiter, only sending a chat message reads an upload, nothing else has middleware", () => {
     const limited = Object.fromEntries(
       routes.filter((r) => (r.middleware ?? []).length > 0).map((r) => [r.name, (r.middleware ?? []).map(labelOf)]),
     );
@@ -68,6 +74,7 @@ describe("route table: role and access of every route", () => {
       "post /auth/login": ["rate-limit:login"],
       "post /auth/student/login": ["rate-limit:login"],
       "post /sessions/join": ["rate-limit:join"],
+      "post /chats/:id/messages": ["upload:file"],
     });
   });
 });

@@ -1,4 +1,5 @@
 import type { Repositories } from "../repositories/index.js";
+import { createObjectStorage, type ObjectStorage } from "../lib/storage.js";
 import { createEventHub } from "../lib/event-hub.js";
 import type { TokenService } from "../lib/token.js";
 import { createAdminClassService, type AdminClassService } from "./admin/class.service.js";
@@ -11,13 +12,14 @@ import { createSessionStreamService, type SessionStreamService } from "./shared/
 import { createStudentAuthService, type StudentAuthService } from "./student/auth.service.js";
 import { createStudentSessionService, type StudentSessionService } from "./student/session.service.js";
 import { createTeacherAuthService, type TeacherAuthService } from "./teacher/auth.service.js";
+import { createTeacherChatService, type TeacherChatService } from "./teacher/chat.service.js";
 import { createTeacherClassService, type TeacherClassService } from "./teacher/class.service.js";
 import { createTeacherSessionService, type TeacherSessionService } from "./teacher/session.service.js";
 
 /** Every service, grouped by the role that uses it (same shape as `Repositories`). */
 export interface Services {
   admin: { teachers: AdminTeacherService; students: AdminStudentService; classes: AdminClassService };
-  teacher: { auth: TeacherAuthService; sessions: TeacherSessionService; classes: TeacherClassService };
+  teacher: { auth: TeacherAuthService; sessions: TeacherSessionService; classes: TeacherClassService; chats: TeacherChatService };
   student: { auth: StudentAuthService; sessions: StudentSessionService };
   shared: { profile: ProfileService; sessionStream: SessionStreamService };
 }
@@ -25,6 +27,8 @@ export interface Services {
 export interface ServiceOptions {
   bcryptCost: number;
   session: Partial<SessionOptions>;
+  /** Where uploaded materials go. Defaults to "not configured" (uploads answer 503). */
+  storage?: ObjectStorage;
 }
 
 export async function createServices(repositories: Repositories, tokens: TokenService, options: ServiceOptions): Promise<Services> {
@@ -42,6 +46,7 @@ export async function createServices(repositories: Repositories, tokens: TokenSe
       auth: createTeacherAuthService(repositories.teacher.auth, credentials),
       sessions: createTeacherSessionService(repositories.teacher.sessions, core),
       classes: createTeacherClassService(repositories.teacher.classes),
+      chats: createTeacherChatService(repositories.teacher.chats, options.storage ?? createObjectStorage(null)),
     },
     student: {
       auth: createStudentAuthService(repositories.student.auth, credentials),

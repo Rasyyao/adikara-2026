@@ -1,6 +1,7 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import type { Config } from "../config/index.js";
 import { createAccessGuards } from "../http/middleware/access.js";
+import { createUpload } from "../http/middleware/upload.js";
 import { createJoinLimiter, createLoginLimiter } from "../http/middleware/rate-limit.js";
 import type { TokenService } from "../lib/token.js";
 import type { Services } from "../services/index.js";
@@ -13,6 +14,7 @@ import { sessionEventsRoutes } from "./shared/session-events.routes.js";
 import { studentAuthRoutes } from "./student/auth.routes.js";
 import { studentSessionRoutes } from "./student/sessions.routes.js";
 import { teacherAuthRoutes } from "./teacher/auth.routes.js";
+import { teacherChatRoutes } from "./teacher/chats.routes.js";
 import { teacherClassRoutes } from "./teacher/classes.routes.js";
 import { teacherSessionRoutes } from "./teacher/sessions.routes.js";
 import type { RouteGroup } from "./types.js";
@@ -22,15 +24,17 @@ export const API_PREFIX = "/api/v1";
 export interface Limits {
   login: ReturnType<typeof createLoginLimiter>;
   join: ReturnType<typeof createJoinLimiter>;
+  /** Reads the optional file of a multipart request. */
+  upload: RequestHandler;
 }
 
 export function createLimits(
   config: Pick<
     Config,
-    "loginRateLimitMax" | "loginRateLimitWindowMinutes" | "joinRateLimitMax" | "joinRateLimitWindowMinutes"
+    "loginRateLimitMax" | "loginRateLimitWindowMinutes" | "joinRateLimitMax" | "joinRateLimitWindowMinutes" | "uploadMaxBytes"
   >,
 ): Limits {
-  return { login: createLoginLimiter(config), join: createJoinLimiter(config) };
+  return { login: createLoginLimiter(config), join: createJoinLimiter(config), upload: createUpload(config.uploadMaxBytes) };
 }
 
 /**
@@ -47,6 +51,7 @@ export function createRouteGroups(services: Services, limits: Limits): RouteGrou
     teacherAuthRoutes(services.teacher.auth, limits),
     teacherClassRoutes(services.teacher.classes),
     teacherSessionRoutes(services.teacher.sessions),
+    teacherChatRoutes(services.teacher.chats, limits.upload),
     // student: log in, join a live session
     studentAuthRoutes(services.student.auth, limits),
     studentSessionRoutes(services.student.sessions, limits),

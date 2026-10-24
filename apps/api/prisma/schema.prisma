@@ -58,6 +58,7 @@ enum DiagnosisStatus {
 enum JobType {
   EXTRACT          @map("extract")
   GENERATE_PACKAGE @map("generate_package")
+  CHAT_REPLY       @map("chat_reply")
 
   @@map("job_type")
 }
@@ -92,6 +93,7 @@ model Teacher {
   createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz
   classrooms   Classroom[]
   sessions     ClassSession[]
+  chats        Chat[]
   materials    Material[]
   packages     Package[]
 
@@ -161,9 +163,12 @@ model ClassSession {
   classroom    Classroom            @relation(fields: [classId], references: [id])
   teacher      Teacher              @relation(fields: [teacherId], references: [id])
   participants SessionParticipant[]
+  chatId       String?              @map("chat_id") @db.Uuid
+  chat         Chat?                @relation(fields: [chatId], references: [id], onDelete: SetNull)
 
   @@index([classId, status])
   @@index([teacherId])
+  @@index([chatId])
   @@map("class_sessions")
 }
 
@@ -183,6 +188,76 @@ model SessionParticipant {
   @@map("session_participants")
 }
 
+// ---------- Chat dan RAG per chat ----------
+
+enum ChatRole {
+  USER      @map("user")
+  ASSISTANT @map("assistant")
+
+  @@map("chat_role")
+}
+
+/// A teacher's workspace for preparing class material. It is the isolation boundary of RAG: a chat only reads the
+/// materials attached to it (`ChatMaterial`) and its own messages. Many class sessions may point at one chat,
+/// so the teacher prepares once and reuses it in the next class.
+model Chat {
+  id        String         @id @default(uuid()) @db.Uuid
+  teacherId String         @map("teacher_id") @db.Uuid
+  title     String
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  teacher   Teacher        @relation(fields: [teacherId], references: [id])
+  messages  ChatMessage[]
+  materials ChatMaterial[]
+  sessions  ClassSession[]
+
+  @@index([teacherId])
+  @@map("chats")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid()) @db.Uuid
+  chatId    String   @map("chat_id") @db.Uuid
+  role      ChatRole
+  content   String
+  sources   Json? // material_chunks ids the assistant answered from
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, createdAt])
+  @@map("chat_messages")
+}
+
+/// The materials a chat may use. A re-uploaded file is a new Material, so a chat never changes under the teacher.
+model ChatMaterial {
+  chatId     String   @map("chat_id") @db.Uuid
+  materialId String   @map("material_id") @db.Uuid
+  addedAt    DateTime @default(now()) @map("added_at") @db.Timestamptz
+  chat       Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, materialId])
+  @@index([materialId])
+  @@map("chat_materials")
+}
+
+/// A material's chunks, embedded once by the Python worker. Retrieval always joins `chat_materials` on the chat,
+/// so a chat sees only its own materials. Vectors are L2-normalized, so `<=>` (cosine) works on them directly.
+/// The vector column is created in raw SQL (Prisma has no vector type); a model with another size needs a migration.
+model MaterialChunk {
+  id             String                      @id @default(uuid()) @db.Uuid
+  materialId     String                      @map("material_id") @db.Uuid
+  chunkIndex     Int                         @map("chunk_index")
+  label          String
+  text           String
+  embedding      Unsupported("vector(1024)")
+  embeddingModel String                      @map("embedding_model")
+  createdAt      DateTime                    @default(now()) @map("created_at") @db.Timestamptz
+  material       Material                    @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([materialId, embeddingModel, chunkIndex])
+  @@map("material_chunks")
+}
+
 // ---------- Materi dan paket ----------
 
 model Material {
@@ -193,9 +268,12 @@ model Material {
   fileType      String         @map("file_type") // pdf | pptx
   extractedText String?        @map("extracted_text")
   status        MaterialStatus @default(UPLOADED)
+  error         String? // why extraction failed; safe to show the teacher
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
   teacher       Teacher        @relation(fields: [teacherId], references: [id])
   packages      Package[]
+  chunks        MaterialChunk[]
+  chats         ChatMaterial[]
 
   @@map("materials")
 }

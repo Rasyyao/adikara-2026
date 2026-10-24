@@ -3,6 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import type { Config } from "./config/index.js";
 import { errorHandler, notFoundHandler } from "./http/middleware/error-handler.js";
+import { createObjectStorage, type ObjectStorage } from "./lib/storage.js";
 import { createTokenService } from "./lib/token.js";
 import type { Repositories } from "./repositories/index.js";
 import { API_PREFIX, createApiRouter, createLimits, createRouteGroups } from "./routes/index.js";
@@ -18,12 +19,15 @@ export interface AppDeps {
   repositories: Repositories;
   /** Overrides for the session rules (clock, PIN generator, ...). Tests only. */
   sessionOptions?: ServiceOptions["session"];
+  /** Where materials are stored. Defaults to R2 from `config.storage`. Tests pass an in-memory one. */
+  storage?: ObjectStorage;
 }
 
-export async function createApp({ config, pingDb, repositories, sessionOptions }: AppDeps) {
+export async function createApp({ config, pingDb, repositories, sessionOptions, storage }: AppDeps) {
   const tokens = createTokenService({ secret: config.jwtSecret, ttlSeconds: config.jwtTtlMinutes * 60 });
   const services = await createServices(repositories, tokens, {
     bcryptCost: config.bcryptCost,
+    storage: storage ?? createObjectStorage(config.storage),
     session: {
       ttlMs: config.sessionTtlMinutes * 60 * 1000,
       presenceGraceMs: config.sessionPresenceGraceSeconds * 1000,

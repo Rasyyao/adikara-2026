@@ -363,4 +363,92 @@ export const schemas = {
       class_id: { type: "string", format: "uuid", description: "Moves the student to another class." },
     },
   },
+  ChatView: {
+    type: "object",
+    required: ["id", "title", "created_at"],
+    properties: {
+      id: { type: "string", format: "uuid" },
+      title: { type: "string", example: "Percakapan baru" },
+      created_at: { type: "string", format: "date-time" },
+    },
+  },
+  ChatResponse: {
+    type: "object",
+    required: ["chat"],
+    properties: { chat: { $ref: "#/components/schemas/ChatView" } },
+  },
+  ChatList: {
+    type: "object",
+    required: ["items"],
+    properties: { items: { type: "array", items: { $ref: "#/components/schemas/ChatView" } } },
+  },
+  CreateChatRequest: {
+    type: "object",
+    properties: { title: { type: "string", minLength: 1, maxLength: 100, description: "Defaults to \"Percakapan baru\"." } },
+  },
+  ChatMaterialView: {
+    type: "object",
+    required: ["id", "title", "file_type", "status", "error"],
+    properties: {
+      id: { type: "string", format: "uuid" },
+      title: { type: "string", description: "The file name without its extension." },
+      file_type: { type: "string", enum: ["pdf", "docx", "pptx"] },
+      status: {
+        type: "string",
+        enum: ["UPLOADED", "EXTRACTED", "FAILED"],
+        description: "UPLOADED: the worker has not finished reading it yet. EXTRACTED: the AI can use it. FAILED: see `error`.",
+      },
+      error: { type: "string", nullable: true, description: "Why reading the file failed; safe to show the teacher." },
+    },
+  },
+  ChatDetail: {
+    type: "object",
+    required: ["chat", "materials", "reply_pending"],
+    properties: {
+      chat: { $ref: "#/components/schemas/ChatView" },
+      materials: { type: "array", items: { $ref: "#/components/schemas/ChatMaterialView" } },
+      reply_pending: { type: "boolean", description: "True while the AI is still writing a reply." },
+    },
+  },
+  ChatMessageView: {
+    type: "object",
+    required: ["id", "role", "content", "sources", "created_at"],
+    properties: {
+      id: { type: "string", format: "uuid" },
+      role: { type: "string", enum: ["USER", "ASSISTANT"] },
+      content: { type: "string" },
+      sources: {
+        type: "array",
+        items: { type: "string", format: "uuid" },
+        nullable: true,
+        description: "Ids of the material chunks an assistant reply was written from.",
+      },
+      created_at: { type: "string", format: "date-time" },
+    },
+  },
+  ChatMessages: {
+    type: "object",
+    required: ["items", "reply_pending"],
+    properties: {
+      items: { type: "array", items: { $ref: "#/components/schemas/ChatMessageView" }, description: "Oldest first." },
+      reply_pending: { type: "boolean", description: "True while the AI is still writing a reply: keep polling." },
+    },
+  },
+  SendMessageRequest: {
+    type: "object",
+    required: ["text"],
+    properties: {
+      text: { type: "string", minLength: 1, maxLength: 4000 },
+      file: { type: "string", format: "binary", description: "Optional. PDF, DOCX or PPTX, up to the upload limit (20 MB by default)." },
+    },
+  },
+  SendMessageResult: {
+    type: "object",
+    required: ["message", "material", "reply_pending"],
+    properties: {
+      message: { $ref: "#/components/schemas/ChatMessageView" },
+      material: { allOf: [{ $ref: "#/components/schemas/ChatMaterialView" }], nullable: true, description: "Set when a file was sent." },
+      reply_pending: { type: "boolean", enum: [true] },
+    },
+  },
 } as const satisfies Record<string, SchemaObject>;

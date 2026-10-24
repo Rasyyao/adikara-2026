@@ -16,6 +16,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     joinRateLimitWindowMinutes: 1,
     sessionTtlMinutes: 240,
     sessionPresenceGraceSeconds: 0,
+    uploadMaxBytes: 1024 * 1024,
+    storage: null,
     corsOrigins: ["http://localhost:3000"],
     docsEnabled: true,
     ...overrides,
