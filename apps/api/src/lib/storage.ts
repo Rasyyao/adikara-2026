@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { StorageConfig } from "../config/index.js";
 import { AppError } from "../http/errors.js";
 
@@ -6,6 +6,8 @@ import { AppError } from "../http/errors.js";
 export interface ObjectStorage {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   remove(key: string): Promise<void>;
+  /** The stored bytes, or null when the key does not exist. */
+  get(key: string): Promise<Buffer | null>;
 }
 
 const unavailable = () => new AppError(503, "storage_unavailable", "File storage is not configured");
@@ -18,6 +20,9 @@ export function createObjectStorage(config: StorageConfig | null): ObjectStorage
         throw unavailable();
       },
       async remove() {},
+      async get() {
+        throw unavailable();
+      },
     };
   }
   const client = new S3Client({
@@ -31,6 +36,15 @@ export function createObjectStorage(config: StorageConfig | null): ObjectStorage
     },
     async remove(key) {
       await client.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }));
+    },
+    async get(key) {
+      try {
+        const result = await client.send(new GetObjectCommand({ Bucket: config.bucket, Key: key }));
+        return result.Body ? Buffer.from(await result.Body.transformToByteArray()) : null;
+      } catch (err) {
+        if ((err as { name?: string }).name === "NoSuchKey") return null;
+        throw err;
+      }
     },
   };
 }

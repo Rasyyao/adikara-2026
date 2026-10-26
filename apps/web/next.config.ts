@@ -17,6 +17,15 @@ const csp = [
   "frame-ancestors 'none'",
 ].join("; ");
 
+// The original-file route is shown inside an iframe of our own pages (the PDF viewer), so it may be framed by the same origin only.
+const fileCsp = [
+  "default-src 'none'",
+  "style-src 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "object-src 'self'",
+  "frame-ancestors 'self'",
+].join("; ");
+
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
@@ -44,6 +53,13 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+      {
+        source: "/api/chats/:id/materials/:materialId/file",
+        headers: [
+          { key: "Content-Security-Policy", value: fileCsp },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
         ],
       },
     ];

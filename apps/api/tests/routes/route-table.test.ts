@@ -37,7 +37,7 @@ describe("route table integrity (real routes)", () => {
   );
 
   // Action endpoints that take no body. Add a route here only when it really has none.
-  const BODYLESS_ACTIONS = ["post /sessions/:id/start", "post /sessions/:id/end"];
+  const BODYLESS_ACTIONS = ["post /sessions/:id/start", "post /sessions/:id/end", "post /chats/:id/stop"];
 
   it("documents a request body for every POST/PUT/PATCH route", () => {
     for (const route of routes.filter((r) => ["post", "put", "patch"].includes(r.method))) {

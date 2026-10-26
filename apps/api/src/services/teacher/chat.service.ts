@@ -19,8 +19,15 @@ export const DEFAULT_CHAT_TITLE = "Percakapan baru";
 export interface TeacherChatService {
   create(auth: AuthContext, input: { title: string | null }): Promise<{ chat: ChatView }>;
   list(auth: AuthContext): Promise<{ items: ChatView[] }>;
+  /** Stops the AI reply that is being written for this chat; the teacher's message stays. */
+  stopReply(auth: AuthContext, chatId: string): Promise<void>;
+  /** Deletes a chat, its messages and the files only it used. */
+  remove(auth: AuthContext, chatId: string): Promise<void>;
   get(auth: AuthContext, chatId: string): Promise<{ chat: ChatView; materials: MaterialView[]; reply_pending: boolean }>;
   messages(auth: AuthContext, chatId: string, query: { limit: number; after?: string }): Promise<{ items: MessageView[]; reply_pending: boolean }>;
+  material(auth: AuthContext, chatId: string, materialId: string): Promise<{ material: MaterialView; extracted_text: string | null }>;
+  /** The stored file of a material, to show it to the teacher. */
+  materialFile(auth: AuthContext, chatId: string, materialId: string): Promise<{ title: string; fileType: string; body: Buffer }>;
   send(
     auth: AuthContext,
     chatId: string,
@@ -55,6 +62,18 @@ export function createTeacherChatService(repository: TeacherChatRepository, stor
       return { items: rows.map(toChatView) };
     },
 
+    async stopReply(auth, chatId) {
+      const chat = await ownChat(auth, chatId);
+      await repository.cancelReply(chat.id);
+    },
+
+    async remove(auth, chatId) {
+      const chat = await ownChat(auth, chatId);
+      const keys = await repository.remove(chat.id);
+      // the rows are gone; a file that cannot be removed now is only wasted space, not an error for the teacher
+      await Promise.all(keys.map((key) => storage.remove(key).catch(() => {})));
+    },
+
     async get(auth, chatId) {
       const chat = await ownChat(auth, chatId);
       const [materials, pending] = await Promise.all([repository.listMaterials(chat.id), repository.hasPendingReply(chat.id)]);
@@ -65,6 +84,22 @@ export function createTeacherChatService(repository: TeacherChatRepository, stor
       const chat = await ownChat(auth, chatId);
       const [rows, pending] = await Promise.all([repository.listMessages(chat.id, query), repository.hasPendingReply(chat.id)]);
       return { items: rows.map(toMessageView), reply_pending: pending };
+    },
+
+    async material(auth, chatId, materialId) {
+      const chat = await ownChat(auth, chatId);
+      const row = await repository.findMaterial(chat.id, materialId);
+      if (!row) throw new AppError(404, "material_not_found", "Material not found");
+      return { material: toMaterialView(row), extracted_text: row.extractedText };
+    },
+
+    async materialFile(auth, chatId, materialId) {
+      const chat = await ownChat(auth, chatId);
+      const row = await repository.findMaterial(chat.id, materialId);
+      if (!row) throw new AppError(404, "material_not_found", "Material not found");
+      const body = await storage.get(row.filePath);
+      if (!body) throw new AppError(404, "file_not_found", "The file is no longer in storage");
+      return { title: row.title, fileType: row.fileType, body };
     },
 
     async send(auth, chatId, { text, file }) {

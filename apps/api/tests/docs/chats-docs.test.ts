@@ -18,7 +18,15 @@ describe("OpenAPI: chats", () => {
   });
 
   it("documents the five endpoints with {braces}", () => {
-    expect(Object.keys(spec.paths).filter((p) => p.startsWith("/chats")).sort()).toEqual(["/chats", "/chats/{id}", "/chats/{id}/messages"]);
+    expect(Object.keys(spec.paths).filter((p) => p.startsWith("/chats")).sort()).toEqual([
+      "/chats",
+      "/chats/{id}",
+      "/chats/{id}/events",
+      "/chats/{id}/materials/{materialId}",
+      "/chats/{id}/materials/{materialId}/file",
+      "/chats/{id}/messages",
+      "/chats/{id}/stop",
+    ]);
     expect(Object.keys(spec.paths["/chats"]).sort()).toEqual(["get", "post"]);
     expect(Object.keys(spec.paths["/chats/{id}/messages"]).sort()).toEqual(["get", "post"]);
   });

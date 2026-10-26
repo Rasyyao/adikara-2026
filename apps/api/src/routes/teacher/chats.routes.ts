@@ -10,6 +10,12 @@ import type { RouteGroup } from "../types.js";
 
 const HEARTBEAT_MS = 25_000;
 
+const FILE_CONTENT_TYPES: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
 export function teacherChatRoutes(service: TeacherChatService, upload: RequestHandler): RouteGroup {
   const chatId = (req: Request) => parseUuidParam(req.params.id, "id");
 
@@ -63,6 +69,44 @@ export function teacherChatRoutes(service: TeacherChatService, upload: RequestHa
         },
       },
       {
+        method: "post",
+        path: "/chats/:id/stop",
+        access: "staff",
+        handler: async (req, res) => {
+          await service.stopReply(requireAuth(req), chatId(req));
+          res.status(204).end();
+        },
+        doc: {
+          summary: "Stop the AI reply",
+          description:
+            "Cancels the reply that is being written. Nothing is saved for it, so `reply_pending` turns false. " +
+            "Does nothing when no reply is pending.",
+          responses: {
+            204: { description: "Stopped (or nothing was pending)" },
+            404: errorDoc("chat_not_found", "No such chat, or it belongs to another teacher.", "Chat not found"),
+          },
+        },
+      },
+      {
+        method: "delete",
+        path: "/chats/:id",
+        access: "staff",
+        handler: async (req, res) => {
+          await service.remove(requireAuth(req), chatId(req));
+          res.status(204).end();
+        },
+        doc: {
+          summary: "Delete a chat",
+          description:
+            "Deletes the chat with its messages, and the uploaded files no other chat uses (also from storage). " +
+            "Class sessions that used the chat are kept.",
+          responses: {
+            204: { description: "Deleted" },
+            404: errorDoc("chat_not_found", "No such chat, or it belongs to another teacher.", "Chat not found"),
+          },
+        },
+      },
+      {
         method: "get",
         path: "/chats/:id/messages",
         access: "staff",
@@ -109,6 +153,49 @@ export function teacherChatRoutes(service: TeacherChatService, upload: RequestHa
             202: { description: "Saved; the reply is being written", schema: ref("SendMessageResult") },
             404: errorDoc("chat_not_found", "No such chat, or it belongs to another teacher.", "Chat not found"),
             413: errorDoc("file_too_large", "The file is larger than the upload limit.", "File is too large (maximum 20 MB)"),
+            503: errorDoc("storage_unavailable", "File storage is not configured on this server.", "File storage is not configured"),
+          },
+        },
+      },
+      {
+        method: "get",
+        path: "/chats/:id/materials/:materialId",
+        access: "staff",
+        handler: async (req, res) => {
+          res.json(await service.material(requireAuth(req), chatId(req), parseUuidParam(req.params.materialId, "materialId")));
+        },
+        doc: {
+          summary: "A material with its extracted text",
+          description: "The text the worker read from the file; `null` until the file has been extracted.",
+          responses: {
+            200: { description: "The material and its text", schema: { type: "object" } },
+            404: errorDoc("material_not_found", "No such material in this chat.", "Material not found"),
+          },
+        },
+      },
+      {
+        method: "get",
+        path: "/chats/:id/materials/:materialId/file",
+        access: "staff",
+        handler: async (req, res) => {
+          const file = await service.materialFile(requireAuth(req), chatId(req), parseUuidParam(req.params.materialId, "materialId"));
+          res
+            .status(200)
+            .set({
+              "Content-Type": FILE_CONTENT_TYPES[file.fileType] ?? "application/octet-stream",
+              "Content-Length": String(file.body.length),
+              "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(`${file.title}.${file.fileType}`)}`,
+              "Cache-Control": "private, no-store",
+              "X-Content-Type-Options": "nosniff",
+            })
+            .send(file.body);
+        },
+        doc: {
+          summary: "The original file of a material",
+          description: "The uploaded PDF/DOCX/PPTX itself, so the teacher can view or download it.",
+          responses: {
+            200: { description: "The file bytes", contentType: "application/octet-stream", schema: { type: "string", format: "binary" } },
+            404: errorDoc("file_not_found", "The material or its stored file does not exist.", "The file is no longer in storage"),
             503: errorDoc("storage_unavailable", "File storage is not configured on this server.", "File storage is not configured"),
           },
         },

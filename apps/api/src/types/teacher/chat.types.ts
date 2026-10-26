@@ -27,6 +27,13 @@ export interface ChatMaterialRow {
   error: string | null;
 }
 
+/** A material of a chat with what is needed to show its file and its extracted text. */
+export interface ChatMaterialFileRow extends ChatMaterialRow {
+  /** Object key in storage. */
+  filePath: string;
+  extractedText: string | null;
+}
+
 export interface NewMaterial {
   teacherId: string;
   title: string;
@@ -41,9 +48,21 @@ export interface TeacherChatRepository {
   /** Chats of one teacher, or all chats when `teacherId` is null (admins). Newest first. */
   list(teacherId: string | null): Promise<ChatRow[]>;
   findById(id: string): Promise<ChatRow | null>;
+  /**
+   * Deletes the chat with its messages. Materials that no other chat or package uses go with it.
+   * Returns the storage keys of the deleted materials so the caller can remove the files.
+   */
+  remove(chatId: string): Promise<string[]>;
   /** Oldest first. Without `after`: the latest `limit` messages. With `after` (a message id): the ones that came after it, for polling. */
   listMessages(chatId: string, options: { limit: number; after?: string }): Promise<ChatMessageRow[]>;
   listMaterials(chatId: string): Promise<ChatMaterialRow[]>;
+  /** One material of this chat (null when it is not attached to the chat), with its storage key and extracted text. */
+  findMaterial(chatId: string, materialId: string): Promise<ChatMaterialFileRow | null>;
+  /**
+   * Cancels the reply jobs of this chat that are queued or running. Returns how many there were.
+   * A running job is only forgotten: the worker sees its row is gone and drops the reply.
+   */
+  cancelReply(chatId: string): Promise<number>;
   /** True while a reply job of this chat is queued or running. */
   hasPendingReply(chatId: string): Promise<boolean>;
   /**

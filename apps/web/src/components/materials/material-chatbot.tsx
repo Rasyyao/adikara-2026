@@ -1,5 +1,7 @@
 "use client";
 
+import katex from "katex";
+import "katex/dist/katex.min.css";
 import {
   AlertCircle,
   ArrowLeft,
@@ -7,14 +9,19 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  Download,
+  Eye,
   FileText,
   FileUp,
   FolderOpen,
   Network,
+  PanelRightClose,
+  PanelRightOpen,
   Paperclip,
   Plus,
   Send,
   Sparkles,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
@@ -31,7 +38,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { sendChatMessageAction } from "@/app/actions/chats";
+import { sendChatMessageAction, stopChatReplyAction } from "@/app/actions/chats";
 import {
   extractMindmapFromContent,
   MindmapBoard,
@@ -43,7 +50,6 @@ import { useToast } from "@/components/ui/toast";
 import type { MaterialView, MessageView } from "@/lib/api/types";
 import {
   STARTER_PROMPTS,
-  TEACHER_CLASSES,
   type ChatMessageItem,
   type ExtractionState,
   type FileKind,
@@ -164,14 +170,228 @@ function formatLatexMath(raw: string): string {
   return out;
 }
 
+/** Renders any LaTeX math expression (inline or display block) using KaTeX with a readable fallback. */
+function LatexMath({ raw, displayMode }: { raw: string; displayMode: boolean }) {
+  const html = useMemo(() => {
+    const normalized = raw
+      .trim()
+      .replace(/\\mathrel\s*\{([^{}]*)\}\s*=/g, "\\mathrel{$1=}");
+    try {
+      return katex.renderToString(normalized, {
+        displayMode,
+        throwOnError: false,
+        strict: "ignore",
+        output: "htmlAndMathml",
+      });
+    } catch {
+      return null;
+    }
+  }, [raw, displayMode]);
+
+  if (!html) {
+    return (
+      <code className="rounded-sm bg-bg px-1.5 py-0.5 font-mono text-caption text-ink">
+        {formatLatexMath(raw)}
+      </code>
+    );
+  }
+
+  if (displayMode) {
+    return (
+      <div
+        className="my-2 overflow-x-auto rounded-md border border-border bg-bg/60 px-4 py-2.5 text-ink"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="mx-0.5 inline-block align-middle text-ink"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+const CODE_KEYWORDS = new Set([
+  "abstract", "as", "async", "await", "base", "bool", "boolean", "break", "byte", "case", "catch",
+  "char", "checked", "class", "const", "continue", "decimal", "def", "default", "delegate", "delete",
+  "do", "double", "elif", "else", "enum", "event", "except", "explicit", "export", "extends", "extern",
+  "false", "finally", "fixed", "float", "for", "foreach", "from", "fun", "function", "goto", "if",
+  "implements", "import", "in", "int", "interface", "internal", "is", "lambda", "let", "lock", "long",
+  "namespace", "new", "nil", "none", "None", "not", "null", "object", "operator", "or", "out", "override",
+  "package", "params", "pass", "private", "protected", "public", "raise", "readonly", "ref", "return",
+  "sbyte", "sealed", "select", "short", "sizeof", "stackalloc", "static", "string", "struct", "super",
+  "switch", "this", "throw", "throws", "true", "True", "False", "try", "type", "typeof", "uint", "ulong",
+  "unchecked", "unsafe", "ushort", "using", "val", "var", "virtual", "void", "volatile", "where", "while",
+  "with", "yield", "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE",
+  "JOIN", "LEFT", "RIGHT", "INNER", "ORDER", "BY", "GROUP", "LIMIT",
+]);
+
+function highlightCodeLine(line: string, lineIdx: number): ReactNode {
+  const tokenPattern =
+    /(\/\/.*$|#.*$|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*(?=\s*\()|\b[A-Za-z_]\w*\b)/g;
+  const parts = line.split(tokenPattern);
+
+  return (
+    <span key={lineIdx} className="block min-h-[1.35rem]">
+      {parts.map((token, idx) => {
+        if (!token) return null;
+        if (token.startsWith("//") || token.startsWith("#")) {
+          return (
+            <span key={idx} className="italic text-muted">
+              {token}
+            </span>
+          );
+        }
+        if (
+          (token.startsWith('"') && token.endsWith('"')) ||
+          (token.startsWith("'") && token.endsWith("'")) ||
+          (token.startsWith("`") && token.endsWith("`"))
+        ) {
+          return (
+            <span key={idx} className="text-success">
+              {token}
+            </span>
+          );
+        }
+        if (/^\d+(?:\.\d+)?$/.test(token)) {
+          return (
+            <span key={idx} className="font-medium text-warning">
+              {token}
+            </span>
+          );
+        }
+        if (CODE_KEYWORDS.has(token)) {
+          return (
+            <span key={idx} className="font-semibold text-primary">
+              {token}
+            </span>
+          );
+        }
+        const restAfter = parts.slice(idx + 1).join("");
+        if (/^[A-Za-z_]\w*$/.test(token) && /^\s*\(/.test(restAfter)) {
+          return (
+            <span key={idx} className="font-medium text-[#4338CA]">
+              {token}
+            </span>
+          );
+        }
+        return <span key={idx}>{token}</span>;
+      })}
+    </span>
+  );
+}
+
+function CodeBlockCard({ lang, code }: { lang: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // ignore
+    }
+  };
+
+  const lines = code.split("\n");
+
+  return (
+    <div className="my-1 overflow-hidden rounded-md border border-border bg-bg/70">
+      <div className="flex items-center justify-between border-b border-border bg-bg px-3.5 py-1.5">
+        <span className="font-mono text-caption font-semibold uppercase tracking-wide text-muted">
+          {lang || "code"}
+        </span>
+        <button
+          type="button"
+          onClick={() => void handleCopy()}
+          title="Salin kode"
+          aria-label="Salin kode"
+          className="inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-caption font-medium text-muted transition-colors hover:bg-surface hover:text-ink"
+        >
+          {copied ? (
+            <Check size={13} strokeWidth={1.75} className="text-success" aria-hidden="true" />
+          ) : (
+            <Copy size={13} strokeWidth={1.75} aria-hidden="true" />
+          )}
+          <span>{copied ? "Tersalin" : "Salin"}</span>
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-4 font-mono text-small leading-relaxed text-ink">
+        <code>{lines.map((line, idx) => highlightCodeLine(line, idx))}</code>
+      </pre>
+    </div>
+  );
+}
+
 /** Strips any stray unmatched markdown asterisks from plain text segments. */
+/** Builds context-aware status phrases from the teacher's latest message/attachment. */
+function getThinkingSteps(lastUser?: ChatMessageItem): string[] {
+  const text = (lastUser?.content ?? "").toLowerCase();
+  const hasFile = Boolean(lastUser?.attachment);
+
+  if (/mind\s?map|peta konsep|peta pikiran/.test(text)) {
+    return [
+      "Thinking…",
+      "Membaca struktur materi…",
+      "Menyusun cabang & hierarki mindmap…",
+      "Menata node dan warna konsep…",
+      "Menyelesaikan mindmap…",
+    ];
+  }
+  if (hasFile) {
+    return [
+      "Thinking…",
+      "Membaca & mengekstrak berkas materi…",
+      "Memahami isi dokumen…",
+      "Menyiapkan jawaban dari materi…",
+    ];
+  }
+  if (/rangkum|ringkas|summary|simpulkan/.test(text)) {
+    return ["Thinking…", "Membaca materi sumber…", "Merangkum poin-poin utama…", "Merapikan hasil rangkuman…"];
+  }
+  if (/soal|kuis|quiz|latihan|ujian/.test(text)) {
+    return ["Thinking…", "Menganalisis topik materi…", "Menyusun soal & pembahasan…", "Memeriksa kunci jawaban…"];
+  }
+  if (/jelaskan|apa itu|bagaimana|mengapa|kenapa|explain/.test(text)) {
+    return ["Thinking…", "Mencari bagian materi yang relevan…", "Menyusun penjelasan bertahap…", "Menyiapkan contoh…"];
+  }
+  if (/kode|code|program|script|rumus|hitung|persamaan/.test(text)) {
+    return ["Thinking…", "Menganalisis kode & rumus…", "Menyusun contoh dan penjelasan…", "Merapikan format jawaban…"];
+  }
+  return ["Thinking…", "Mencari konteks dari materi…", "Menyusun jawaban…", "Merapikan format jawaban…"];
+}
+
+function ContextualThinking({ steps }: { steps: string[] }) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const signature = steps.join("|");
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
+    }, 2200);
+    return () => window.clearInterval(timer);
+  }, [steps.length, signature]);
+
+  return (
+    <div role="status" aria-live="polite" className="chat-item-in inline-flex items-center gap-2 py-1">
+      <Sparkles size={16} strokeWidth={1.75} className="shrink-0 animate-pulse text-primary" aria-hidden="true" />
+      <span key={stepIndex} className="thinking-text text-small font-medium">
+        {steps[Math.min(stepIndex, steps.length - 1)]}
+      </span>
+    </div>
+  );
+}
+
 function stripStrayAsterisks(value: string): string {
   return value.replace(/\*\*+/g, "").replace(/(^|[\s(])\*+(?=\S)|(?<=\S)\*+(?=[\s).,;:!?]|$)/g, "$1");
 }
 
 function FormattedInline({ text }: { text: string }) {
   const tokenRegex =
-    /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\*\*[\s\S]+?\*\*|`[^`]+`|\$(?!\s)[^$\n]+?(?<!\s)\$|\\\([\s\S]+?\\\)|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*[^*\n]+\*)/g;
+    /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\begin\{[a-z*]+\}[\s\S]+?\\end\{[a-z*]+\}|\*\*[\s\S]+?\*\*|`[^`]+`|\$(?!\s)[^$\n]+?(?<!\s)\$|\\\([\s\S]+?\\\)|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*[^*\n]+\*)/g;
   const parts = text.split(tokenRegex);
 
   return (
@@ -180,27 +400,16 @@ function FormattedInline({ text }: { text: string }) {
         if (!part) return null;
 
         if ((part.startsWith("$$") && part.endsWith("$$")) || (part.startsWith("\\[") && part.endsWith("\\]"))) {
-          const inner = part.slice(2, -2);
-          return (
-            <code
-              key={index}
-              className="mx-0.5 rounded-sm border border-border bg-bg px-2 py-0.5 font-mono text-small font-medium text-ink"
-            >
-              {formatLatexMath(inner)}
-            </code>
-          );
+          return <LatexMath key={index} raw={part.slice(2, -2)} displayMode={false} />;
+        }
+
+        if (part.startsWith("\\begin{") && part.includes("\\end{")) {
+          return <LatexMath key={index} raw={part} displayMode />;
         }
 
         if ((part.startsWith("$") && part.endsWith("$") && part.length > 2) || (part.startsWith("\\(") && part.endsWith("\\)"))) {
           const inner = part.startsWith("\\(") ? part.slice(2, -2) : part.slice(1, -1);
-          return (
-            <code
-              key={index}
-              className="rounded-sm border border-border bg-bg px-1.5 py-0.5 font-mono text-caption font-medium text-ink"
-            >
-              {formatLatexMath(inner)}
-            </code>
-          );
+          return <LatexMath key={index} raw={inner} displayMode={false} />;
         }
 
         if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
@@ -259,19 +468,39 @@ type ListEntry = {
   lines: string[];
 };
 
+function isDisplayMathLine(trimmed: string): boolean {
+  return (
+    (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length > 4) ||
+    (trimmed.startsWith("\\[") && trimmed.endsWith("\\]") && trimmed.length > 4) ||
+    (trimmed.startsWith("\\begin{") && /\\end\{[^}]+\}\s*$/.test(trimmed))
+  );
+}
+
+function displayMathBody(trimmed: string): string {
+  if (trimmed.startsWith("\\begin{")) return trimmed;
+  return trimmed.slice(2, -2);
+}
+
+/** Collapses multi-line $$…$$, \[…\] and \begin{env}…\end{env} blocks onto single lines. */
+function normalizeDisplayMath(text: string): string {
+  return text
+    .replace(/\$\$([\s\S]+?)\$\$/g, (match, inner: string) =>
+      inner.includes("\n") ? `\n$$${inner.replace(/\s*\n\s*/g, " ").trim()}$$\n` : match,
+    )
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_m, inner: string) => `\n\\[${inner.replace(/\s*\n\s*/g, " ").trim()}\\]\n`)
+    .replace(
+      /^[ \t]*(\\begin\{([a-zA-Z*]+)\}[\s\S]*?\\end\{\2\})[ \t]*$/gm,
+      (_m, block: string) => `\n${block.replace(/\s*\n\s*/g, " ").trim()}\n`,
+    );
+}
+
 function renderListItemLines(lines: string[], keyPrefix: string) {
   return lines.map((line, idx) => {
     const trimmed = line.trim();
-    if (
-      (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length > 4) ||
-      (trimmed.startsWith("\\[") && trimmed.endsWith("\\]") && trimmed.length > 4)
-    ) {
+    if (isDisplayMathLine(trimmed)) {
       return (
-        <div
-          key={`${keyPrefix}-math-${idx}`}
-          className="my-1.5 overflow-x-auto rounded-md border border-border bg-bg px-3.5 py-2 font-mono text-small font-medium text-ink"
-        >
-          {formatLatexMath(trimmed.slice(2, -2))}
+        <div key={`${keyPrefix}-math-${idx}`} className="my-1.5 overflow-x-auto">
+          <LatexMath raw={displayMathBody(trimmed)} displayMode />
         </div>
       );
     }
@@ -335,23 +564,10 @@ function FormattedContent({
           const firstLine = lines[0]?.trim() ?? "";
           const hasLang = /^[a-zA-Z0-9_+#-]+$/.test(firstLine);
           const code = hasLang ? lines.slice(1).join("\n") : lines.join("\n");
-          return (
-            <div key={segIdx} className="overflow-hidden rounded-md border border-border bg-surface">
-              {hasLang && (
-                <div className="border-b border-border bg-bg px-4 py-1.5 font-mono text-caption font-medium uppercase text-muted">
-                  {firstLine}
-                </div>
-              )}
-              <pre className="overflow-x-auto p-4 font-mono text-small text-ink">
-                <code>{code}</code>
-              </pre>
-            </div>
-          );
+          return <CodeBlockCard key={segIdx} lang={hasLang ? firstLine : "code"} code={code} />;
         }
 
-        const normalized = segment.replace(/\$\$\s*\n([\s\S]*?)\n\s*\$\$/g, (_, inner: string) => {
-          return `$$${inner.replace(/\s*\n\s*/g, " ").trim()}$$`;
-        });
+        const normalized = normalizeDisplayMath(segment);
 
         const rawLines = normalized.split("\n");
         const nodes: ReactNode[] = [];
@@ -435,21 +651,15 @@ function FormattedContent({
             return;
           }
 
-          if (
-            (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length > 4) ||
-            (trimmed.startsWith("\\[") && trimmed.endsWith("\\]") && trimmed.length > 4)
-          ) {
+          if (isDisplayMathLine(trimmed)) {
             if (listBuffer.length > 0) {
               listBuffer[listBuffer.length - 1].lines.push(trimmed);
               return;
             }
             flushParagraph(`${segIdx}-p-${lineIdx}`);
             nodes.push(
-              <div
-                key={`${segIdx}-math-${lineIdx}`}
-                className="overflow-x-auto rounded-md border border-border bg-bg px-3.5 py-2 font-mono text-small font-medium text-ink"
-              >
-                {formatLatexMath(trimmed.slice(2, -2))}
+              <div key={`${segIdx}-math-${lineIdx}`} className="overflow-x-auto">
+                <LatexMath raw={displayMathBody(trimmed)} displayMode />
               </div>,
             );
             return;
@@ -498,6 +708,146 @@ function SourceStatusBadge({ status }: { status: ExtractionState }) {
   );
 }
 
+type SourceTextResult = { id: string; text: string | null; error: string | null };
+
+/** Full-screen viewer for one source: the original file (PDF, in the browser's viewer) and the text the AI read from it. */
+function SourceViewer({ chatId, source, onClose }: { chatId: string; source: MaterialSource; onClose: () => void }) {
+  const isPdf = source.fileType === "PDF";
+  const [view, setView] = useState<"file" | "text">(isPdf ? "file" : "text");
+  const [result, setResult] = useState<SourceTextResult | null>(null);
+  const fileUrl = `/api/chats/${chatId}/materials/${source.id}/file`;
+  const loadingText = view === "text" && result?.id !== source.id;
+
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (view !== "text") return;
+    const controller = new AbortController();
+    fetch(`/api/chats/${chatId}/materials/${source.id}`, { signal: controller.signal })
+      .then(async (res) => {
+        const body = (await res.json().catch(() => null)) as {
+          extracted_text?: string | null;
+          error?: { message?: string };
+        } | null;
+        if (!res.ok) throw new Error(body?.error?.message ?? "Gagal memuat isi berkas");
+        setResult({ id: source.id, text: body?.extracted_text ?? null, error: null });
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setResult({ id: source.id, text: null, error: err instanceof Error ? err.message : "Gagal memuat isi berkas" });
+      });
+    return () => controller.abort();
+  }, [chatId, source.id, view]);
+
+  const tabClass = (active: boolean) =>
+    `rounded-md px-3 py-1.5 text-caption font-semibold transition-colors ${
+      active ? "bg-primary-tint text-primary" : "text-muted hover:bg-bg hover:text-ink"
+    }`;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Lihat berkas ${source.title}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="chat-item-in flex h-full max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-surface"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary-tint text-primary">
+              <FileText size={18} strokeWidth={1.75} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-small font-semibold text-ink" title={source.title}>
+                {source.title}
+              </p>
+              <p className="text-caption text-muted">
+                {source.fileType} · {source.sizeLabel}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {isPdf && (
+              <>
+                <button type="button" onClick={() => setView("file")} className={tabClass(view === "file")}>
+                  Berkas
+                </button>
+                <button type="button" onClick={() => setView("text")} className={tabClass(view === "text")}>
+                  Teks terbaca
+                </button>
+              </>
+            )}
+            <a
+              href={`${fileUrl}?download=1`}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-border px-3 text-caption font-semibold text-ink transition-colors hover:border-primary hover:text-primary"
+            >
+              <Download size={14} strokeWidth={1.75} aria-hidden="true" />
+              Unduh
+            </a>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Tutup"
+              className="flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg hover:text-ink"
+            >
+              <X size={18} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 bg-bg">
+          {view === "file" ? (
+            <iframe src={fileUrl} title={source.title} className="size-full border-0 bg-surface" />
+          ) : loadingText ? (
+            <div className="flex h-full items-center justify-center gap-2 text-small text-muted">
+              <Spinner size={16} /> Memuat isi berkas…
+            </div>
+          ) : result?.error ? (
+            <div className="flex h-full items-center justify-center p-8 text-center text-small text-danger">{result.error}</div>
+          ) : result?.text ? (
+            <div className="h-full overflow-y-auto p-6">
+              {!isPdf && (
+                <p className="mb-4 rounded-md border border-border bg-surface px-3 py-2 text-caption text-muted">
+                  Pratinjau {source.fileType} belum didukung di browser. Berikut teks yang dibaca AI dari berkas ini; gunakan
+                  tombol Unduh untuk membuka berkas aslinya.
+                </p>
+              )}
+              <pre className="mx-auto max-w-3xl whitespace-pre-wrap font-sans text-small leading-relaxed text-ink">{result.text}</pre>
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center p-8 text-center text-small text-muted">
+              {source.status === "UPLOADED"
+                ? "Berkas masih diekstrak. Teks akan tersedia sebentar lagi."
+                : "Belum ada teks yang berhasil dibaca dari berkas ini."}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type RightSidebarTabId = "sources" | "mindmap";
+
+const SIDEBAR_TABS: Array<{
+  id: RightSidebarTabId;
+  label: string;
+  Icon: typeof FolderOpen;
+}> = [
+  { id: "sources", label: "Sumber", Icon: FolderOpen },
+  { id: "mindmap", label: "Mindmap", Icon: Network },
+];
+
 export function MaterialChatbot({
   initialMaterial,
   initialReplyPending = false,
@@ -512,14 +862,12 @@ export function MaterialChatbot({
   const nextIdRef = useRef(1);
   const uploadTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const promptInputId = useId();
-  const classSelectId = useId();
   const titleInputId = useId();
 
   const [chatId, setChatId] = useState<string | null>(
     initialMaterial?.id && isUuid(initialMaterial.id) ? initialMaterial.id : null,
   );
   const [title, setTitle] = useState(initialMaterial?.title ?? "Materi kelas baru");
-  const [className, setClassName] = useState(initialMaterial?.className ?? TEACHER_CLASSES[0].name);
   const [sources, setSources] = useState<MaterialSource[]>(initialMaterial?.sources ?? []);
   const [messages, setMessages] = useState<ChatMessageItem[]>(initialMaterial?.messages ?? []);
   const [stagedFile, setStagedFile] = useState<MaterialSource | null>(null);
@@ -527,17 +875,22 @@ export function MaterialChatbot({
   const [uploadProgress, setUploadProgress] = useState<number>(100);
   const [prompt, setPrompt] = useState("");
   const [thinking, setThinking] = useState(initialReplyPending);
+  const [isSending, setIsSending] = useState(false);
+  const stopRequestedRef = useRef(false);
   const [dragging, setDragging] = useState(false);
   const initialHasMindmap = useMemo(
     () => (initialMaterial?.messages ?? []).some((m) => m.role === "ASSISTANT" && extractMindmapFromContent(m.content) !== null),
     [initialMaterial?.messages],
   );
 
-  const [rightPanel, setRightPanel] = useState<"closed" | "sources" | "mindmap">(
-    initialHasMindmap ? "mindmap" : initialMaterial?.sources.length ? "sources" : "closed",
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<RightSidebarTabId>(
+    initialHasMindmap ? "mindmap" : "sources",
   );
   const [customMindmap, setCustomMindmap] = useState<MindmapPayload | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [viewingSourceId, setViewingSourceId] = useState<string | null>(null);
+  const viewingSource = sources.find((s) => s.id === viewingSourceId) ?? null;
   const prevMindmapMsgIdRef = useRef<string | null>(null);
 
   const latestMindmapEntry = useMemo(() => {
@@ -553,13 +906,14 @@ export function MaterialChatbot({
 
   const activeMindmap = customMindmap ?? latestMindmapEntry?.mindmap ?? null;
 
-  // Automatically switch right panel to Mindmap when a new mindmap message arrives
+  // Automatically open the right sidebar to Mindmap tab when a new mindmap message arrives
   useEffect(() => {
     if (!latestMindmapEntry) return;
     if (prevMindmapMsgIdRef.current !== latestMindmapEntry.id) {
       prevMindmapMsgIdRef.current = latestMindmapEntry.id;
       setCustomMindmap(null);
-      setRightPanel("mindmap");
+      setActiveTab("mindmap");
+      setSidebarOpen(true);
     }
   }, [latestMindmapEntry]);
 
@@ -714,7 +1068,7 @@ export function MaterialChatbot({
     const fileToSend = rawFile;
     const finalText =
       text ||
-      `Tolong pelajari berkas ${attachedMeta?.title} dan buatkan ringkasan materi serta soal latihan untuk kelas ${className}.`;
+      `Tolong pelajari berkas ${attachedMeta?.title} dan buatkan ringkasan materi serta soal latihan.`;
 
     const nextTitle = title === "Materi kelas baru" && text ? text.slice(0, 48) : title;
     if (nextTitle !== title) setTitle(nextTitle);
@@ -734,6 +1088,8 @@ export function MaterialChatbot({
     setRawFile(null);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setThinking(true);
+    setIsSending(true);
+    stopRequestedRef.current = false;
 
     const formData = new FormData();
     if (chatId) formData.set("chat_id", chatId);
@@ -742,6 +1098,7 @@ export function MaterialChatbot({
     if (fileToSend) formData.set("file", fileToSend, fileToSend.name);
 
     const result = await sendChatMessageAction(formData);
+    setIsSending(false);
     if (!result.ok) {
       setThinking(false);
       toast.error(result.message);
@@ -768,6 +1125,23 @@ export function MaterialChatbot({
     setMessages((prev) =>
       prev.map((m) => (m.id === tempMessageId ? mapApiMessage(result.message, savedAttachment) : m)),
     );
+
+    // the teacher pressed Stop while the message was still being sent: cancel the reply that was just queued
+    if (stopRequestedRef.current) {
+      stopRequestedRef.current = false;
+      void stopChatReplyAction(result.chat.id);
+    }
+  }
+
+  /** Stops waiting for the AI and cancels the reply that is being written. */
+  async function stopReply() {
+    setThinking(false);
+    if (!chatId) {
+      stopRequestedRef.current = true;
+      return;
+    }
+    const result = await stopChatReplyAction(chatId);
+    if (!result.ok) toast.error(result.message);
   }
 
   function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
@@ -804,7 +1178,7 @@ export function MaterialChatbot({
     setSources([]);
     setMessages([]);
     setCustomMindmap(null);
-    setRightPanel("closed");
+    setActiveTab("sources");
     setStagedFile(null);
     setRawFile(null);
     setUploadProgress(100);
@@ -817,7 +1191,8 @@ export function MaterialChatbot({
   function handleGenerateMindmap() {
     const sourceNames = sources.map((s) => s.title).join(", ");
     const targetLabel = sourceNames || title;
-    setRightPanel("mindmap");
+    setActiveTab("mindmap");
+    setSidebarOpen(true);
     void submitMessage(
       `Tolong buatkan kerangka mindmap hierarkis (topik utama, sub-topik, dan poin kunci) yang mudah dipahami dari materi ${targetLabel}.`,
     );
@@ -890,34 +1265,6 @@ export function MaterialChatbot({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setRightPanel((p) => (p === "sources" ? "closed" : "sources"))}
-            aria-expanded={rightPanel === "sources"}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-md border px-3 text-small font-semibold transition-colors duration-150 ease-out ${
-              rightPanel === "sources"
-                ? "border-primary bg-primary-tint text-primary"
-                : "border-border bg-surface text-ink hover:bg-bg"
-            }`}
-          >
-            <FolderOpen size={20} strokeWidth={1.75} aria-hidden="true" />
-            <span>Sumber ({sources.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setRightPanel((p) => (p === "mindmap" ? "closed" : "mindmap"))}
-            aria-expanded={rightPanel === "mindmap"}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-md border px-3 text-small font-semibold transition-colors duration-150 ease-out ${
-              rightPanel === "mindmap"
-                ? "border-primary bg-primary-tint text-primary"
-                : "border-border bg-surface text-ink hover:bg-bg"
-            }`}
-          >
-            <Network size={20} strokeWidth={1.75} aria-hidden="true" />
-            <span>Mindmap</span>
-          </button>
-
-          <button
-            type="button"
             onClick={resetNewChat}
             title="Mulai materi baru"
             className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:bg-bg"
@@ -925,15 +1272,29 @@ export function MaterialChatbot({
             <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
             <span className="hidden sm:inline">Baru</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((open) => !open)}
+            aria-expanded={sidebarOpen}
+            title={sidebarOpen ? "Sembunyikan sidebar kanan" : "Buka sidebar kanan"}
+            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:bg-bg lg:hidden"
+          >
+            {sidebarOpen ? (
+              <PanelRightClose size={20} strokeWidth={1.75} aria-hidden="true" />
+            ) : (
+              <PanelRightOpen size={20} strokeWidth={1.75} aria-hidden="true" />
+            )}
+          </button>
         </div>
       </header>
 
-      {/* Main full-screen body: splits 50/50 when Mindmap visualization is open */}
+      {/* Main full-screen body: splits 50/50 when Mindmap tab is open in the right sidebar */}
       <div className="flex min-h-0 flex-1 overflow-hidden bg-surface">
         <section
           aria-label="Percakapan asisten AI"
           className={`flex min-w-0 flex-col overflow-hidden bg-surface transition-all duration-200 ${
-            rightPanel === "mindmap" ? "w-full lg:w-1/2" : "flex-1"
+            sidebarOpen && activeTab === "mindmap" ? "w-full lg:w-1/2" : "flex-1"
           }`}
         >
           {/* Scrollable middle area with wider max-w-5xl reading & chat column */}
@@ -993,70 +1354,61 @@ export function MaterialChatbot({
                     <article
                       key={message.id}
                       aria-label="Balasan asisten AI"
-                      className="chat-item-in flex w-full flex-col gap-4 rounded-lg border border-border bg-bg p-6"
+                      className="chat-item-in flex w-full gap-3"
                     >
-                      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            aria-hidden="true"
-                            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-tint text-primary"
-                          >
-                            <Sparkles size={18} strokeWidth={1.75} />
-                          </span>
-                          <div>
-                            <p className="text-small font-semibold text-ink">Asisten NusaCode</p>
-                            <p className="text-caption text-muted">Kelas {className} · {message.createdAt}</p>
-                          </div>
-                        </div>
-                        {message.sources && message.sources.length > 0 && (
-                          <span className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2.5 py-1 text-caption font-medium text-muted">
-                            <FileText size={16} strokeWidth={1.75} className="text-primary" aria-hidden="true" />
-                            {message.sources.every((s) => isUuid(s))
-                              ? `Berdasarkan ${message.sources.length} bagian berkas materi`
-                              : message.sources.join(", ")}
-                          </span>
-                        )}
-                      </header>
+                      <span
+                        aria-hidden="true"
+                        className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-tint text-primary"
+                      >
+                        <Sparkles size={16} strokeWidth={1.75} />
+                      </span>
+                      <div className="flex min-w-0 flex-1 flex-col gap-2">
 
                       <FormattedContent
                         content={message.content}
                         onOpenMindmap={(mm) => {
                           setCustomMindmap(mm);
-                          setRightPanel("mindmap");
+                          setActiveTab("mindmap");
+                          setSidebarOpen(true);
                         }}
                       />
 
-                      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void copyMessage(message.id, message.content)}
-                            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:bg-primary-tint hover:text-primary"
-                          >
-                            {copiedId === message.id ? (
-                              <Check size={20} strokeWidth={1.75} aria-hidden="true" />
-                            ) : (
-                              <Copy size={20} strokeWidth={1.75} aria-hidden="true" />
-                            )}
-                            {copiedId === message.id ? "Tersalin" : "Salin teks"}
-                          </button>
-                        </div>
+                      <footer className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void copyMessage(message.id, message.content)}
+                          aria-label={copiedId === message.id ? "Tersalin" : "Salin teks"}
+                          title={copiedId === message.id ? "Tersalin" : "Salin teks"}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-out hover:bg-bg hover:text-primary"
+                        >
+                          {copiedId === message.id ? (
+                            <Check size={15} strokeWidth={1.75} aria-hidden="true" />
+                          ) : (
+                            <Copy size={15} strokeWidth={1.75} aria-hidden="true" />
+                          )}
+                        </button>
+                        <span className="text-caption text-muted">{message.createdAt}</span>
+                        {message.sources && message.sources.length > 0 && (
+                          <span className="inline-flex items-center gap-1 text-caption text-muted">
+                            <FileText size={13} strokeWidth={1.75} aria-hidden="true" />
+                            {message.sources.every((s) => isUuid(s))
+                              ? `${message.sources.length} bagian materi`
+                              : message.sources.join(", ")}
+                          </span>
+                        )}
                       </footer>
+                      </div>
                     </article>
                   ),
                 )}
 
                 {thinking && (
-                  <div
-                    role="status"
-                    aria-live="polite"
-                    className="chat-item-in inline-flex items-center gap-2 py-1"
-                  >
-                    <Sparkles size={16} strokeWidth={1.75} className="shrink-0 animate-pulse text-primary" aria-hidden="true" />
-                    <span className="thinking-text text-small font-medium">
-                      Thinking…
-                    </span>
-                  </div>
+                  <ContextualThinking
+                    key={messages.length}
+                    steps={getThinkingSteps(
+                      [...messages].reverse().find((m) => m.role === "USER"),
+                    )}
+                  />
                 )}
               </div>
             )}
@@ -1122,86 +1474,83 @@ export function MaterialChatbot({
                       <Paperclip size={20} strokeWidth={1.75} aria-hidden="true" />
                       <span>Unggah materi</span>
                     </button>
-
-                    <label htmlFor={classSelectId} className="sr-only">
-                      Pilih kelas sasaran
-                    </label>
-                    <select
-                      id={classSelectId}
-                      value={className}
-                      onChange={(event) => setClassName(event.target.value)}
-                      className="min-h-11 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:border-muted"
-                    >
-                      {TEACHER_CLASSES.map((item) => (
-                        <option key={item.id} value={item.name}>
-                          {item.name} · {item.subject}
-                        </option>
-                      ))}
-                    </select>
                   </div>
 
-                  <Button
-                    type="submit"
-                    loading={thinking || isUploadingFile}
-                    disabled={thinking || isUploadingFile || (!prompt.trim() && !stagedFile)}
-                  >
-                    <Send size={20} strokeWidth={1.75} aria-hidden="true" />
-                    {isUploadingFile ? "Mengunggah…" : "Kirim"}
-                  </Button>
+                  {thinking && !isSending ? (
+                    <Button type="button" variant="secondary" onClick={() => void stopReply()} aria-label="Hentikan balasan AI">
+                      <Square size={16} strokeWidth={1.75} fill="currentColor" aria-hidden="true" />
+                      Berhenti
+                    </Button>
+                  ) : (
+                    <Button
+                      type="submit"
+                      loading={isSending || isUploadingFile}
+                      disabled={isSending || isUploadingFile || (!prompt.trim() && !stagedFile)}
+                    >
+                      {!(isSending || isUploadingFile) && <Send size={20} strokeWidth={1.75} aria-hidden="true" />}
+                      {isUploadingFile ? "Mengunggah…" : isSending ? "Mengirim…" : "Kirim"}
+                    </Button>
+                  )}
                 </div>
               </div>
             </form>
           </div>
         </section>
 
-        {/* Right panel: toggles between Sumber Materi and 50/50 Interactive Mindmap Visualization */}
-        {rightPanel !== "closed" && (
+        {/* NotebookLM-style Right Studio Sidebar: collapsible rail + extensible feature tabs */}
+        {sidebarOpen ? (
           <aside
-            aria-label={rightPanel === "mindmap" ? "Visualisasi Mindmap Interaktif" : "Sumber materi yang diunggah"}
+            aria-label="Sidebar Studio & Materi"
             className={`fixed inset-y-16 right-0 z-20 flex max-w-full shrink-0 flex-col overflow-hidden border-l border-border bg-surface shadow-[var(--shadow-overlay)] transition-all duration-200 lg:static lg:z-auto lg:shadow-none ${
-              rightPanel === "mindmap" ? "w-full lg:w-1/2" : "w-80"
+              activeTab === "mindmap" ? "w-full lg:w-1/2" : "w-80 sm:w-96"
             }`}
           >
-            {/* Shared toggle header so Sumber Materi and Mindmap can be switched anytime */}
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-4 py-2.5">
-              <div className="inline-flex rounded-md border border-border bg-bg p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setRightPanel("sources")}
-                  className={`inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-caption font-semibold transition-colors ${
-                    rightPanel === "sources"
-                      ? "bg-surface text-primary shadow-xs"
-                      : "text-muted hover:text-ink"
-                  }`}
-                >
-                  <FolderOpen size={14} strokeWidth={1.75} aria-hidden="true" />
-                  <span>Sumber ({sources.length})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRightPanel("mindmap")}
-                  className={`inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-caption font-semibold transition-colors ${
-                    rightPanel === "mindmap"
-                      ? "bg-surface text-primary shadow-xs"
-                      : "text-muted hover:text-ink"
-                  }`}
-                >
-                  <Network size={14} strokeWidth={1.75} aria-hidden="true" />
-                  <span>Mindmap</span>
-                </button>
-              </div>
+            {/* NotebookLM-style Sidebar Tab Bar */}
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
+              <nav aria-label="Menu fitur materi" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+                {SIDEBAR_TABS.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  const TabIcon = tab.Icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-caption font-semibold transition-colors ${
+                        isActive
+                          ? "bg-primary text-white"
+                          : "text-muted hover:bg-bg hover:text-ink"
+                      }`}
+                    >
+                      <TabIcon size={15} strokeWidth={1.75} aria-hidden="true" />
+                      <span>{tab.label}</span>
+                      {tab.id === "sources" && (
+                        <span
+                          className={`rounded-full px-1.5 py-0.2 text-[11px] font-semibold ${
+                            isActive ? "bg-white/20 text-white" : "bg-bg text-muted"
+                          }`}
+                        >
+                          {sources.length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
 
               <button
                 type="button"
-                onClick={() => setRightPanel("closed")}
-                aria-label="Tutup panel kanan"
-                className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-bg hover:text-ink"
+                onClick={() => setSidebarOpen(false)}
+                title="Lipat sidebar kanan"
+                aria-label="Lipat sidebar kanan"
+                className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg hover:text-ink"
               >
-                <X size={18} strokeWidth={1.75} aria-hidden="true" />
+                <PanelRightClose size={18} strokeWidth={1.75} aria-hidden="true" />
               </button>
             </div>
 
-            {rightPanel === "sources" ? (
+            {activeTab === "sources" ? (
               <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
                 <div>
                   <h2 className="text-h3 font-semibold text-ink">Sumber materi</h2>
@@ -1256,15 +1605,27 @@ export function MaterialChatbot({
                         </div>
                         <div className="flex items-center justify-between border-t border-border pt-2">
                           <SourceStatusBadge status={source.status} />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void submitMessage(`Tolong buatkan ringkasan materi dan latihan soal dari berkas ${source.title}.`)
-                            }
-                            className="text-caption font-semibold text-primary hover:underline"
-                          >
-                            Gunakan di chat
-                          </button>
+                          <div className="flex items-center gap-3">
+                            {chatId && isUuid(source.id) && (
+                              <button
+                                type="button"
+                                onClick={() => setViewingSourceId(source.id)}
+                                className="inline-flex items-center gap-1 text-caption font-semibold text-ink hover:text-primary"
+                              >
+                                <Eye size={14} strokeWidth={1.75} aria-hidden="true" />
+                                Lihat
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void submitMessage(`Tolong buatkan ringkasan materi dan latihan soal dari berkas ${source.title}.`)
+                              }
+                              className="text-caption font-semibold text-primary hover:underline"
+                            >
+                              Gunakan di chat
+                            </button>
+                          </div>
                         </div>
                       </li>
                     ))}
@@ -1318,8 +1679,59 @@ export function MaterialChatbot({
               </div>
             )}
           </aside>
+        ) : (
+          /* Collapsed NotebookLM-style vertical icon rail on the right edge */
+          <aside
+            aria-label="Sidebar Studio terlipat"
+            className="hidden w-14 shrink-0 flex-col items-center gap-2 border-l border-border bg-surface py-3 lg:flex"
+          >
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              title="Buka sidebar kanan"
+              aria-label="Buka sidebar kanan"
+              className="flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg hover:text-ink"
+            >
+              <PanelRightOpen size={18} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+
+            <span className="my-0.5 h-px w-7 bg-border" aria-hidden="true" />
+
+            {SIDEBAR_TABS.map((tab) => {
+              const TabIcon = tab.Icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setSidebarOpen(true);
+                  }}
+                  title={tab.label}
+                  aria-label={tab.label}
+                  className={`relative flex size-10 items-center justify-center rounded-md transition-colors ${
+                    isActive
+                      ? "bg-primary text-white"
+                      : "text-muted hover:bg-bg hover:text-ink"
+                  }`}
+                >
+                  <TabIcon size={18} strokeWidth={1.75} aria-hidden="true" />
+                  {tab.id === "sources" && sources.length > 0 && (
+                    <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white ring-2 ring-surface">
+                      {sources.length}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </aside>
         )}
       </div>
+
+      {viewingSource && chatId && (
+        <SourceViewer chatId={chatId} source={viewingSource} onClose={() => setViewingSourceId(null)} />
+      )}
     </div>
   );
 }

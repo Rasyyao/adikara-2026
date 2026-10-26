@@ -54,6 +54,8 @@ export const teacherChatsApi = {
   create: (token: string, title?: string) =>
     apiFetch<{ chat: ChatView }>("/chats", { method: "POST", token, body: title ? { title } : {} }),
   get: (token: string, id: string) => apiFetch<ChatDetail>(`/chats/${id}`, { token }),
+  stop: (token: string, id: string) => apiFetch<void>(`/chats/${id}/stop`, { method: "POST", token }),
+  remove: (token: string, id: string) => apiFetch<void>(`/chats/${id}`, { method: "DELETE", token }),
   messages: (token: string, id: string, query?: { limit?: number; after?: string }) => {
     const params = new URLSearchParams();
     if (query?.limit) params.set("limit", String(query.limit));

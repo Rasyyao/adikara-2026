@@ -339,6 +339,17 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
         async findById(id) {
           return chats.get(id) ?? null;
         },
+        async remove(chatId) {
+          chats.delete(chatId);
+          for (let i = chatMessages.length - 1; i >= 0; i--) if (chatMessages[i].chatId === chatId) chatMessages.splice(i, 1);
+          const keys: string[] = [];
+          for (const [id, m] of materials) {
+            if (m.chatId !== chatId) continue;
+            keys.push(m.filePath);
+            materials.delete(id);
+          }
+          return keys;
+        },
         async listMessages(chatId, { limit, after }) {
           const all = chatMessages.filter((m) => m.chatId === chatId);
           if (!after) return all.slice(-limit);
@@ -349,6 +360,19 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
           return [...materials.values()]
             .filter((m) => m.chatId === chatId)
             .map(({ id, title, fileType, status, error }) => ({ id, title, fileType, status, error }));
+        },
+        async findMaterial(chatId, materialId) {
+          const m = materials.get(materialId);
+          if (!m || m.chatId !== chatId) return null;
+          return { id: m.id, title: m.title, fileType: m.fileType, status: m.status, error: m.error, filePath: m.filePath, extractedText: null };
+        },
+        async cancelReply(chatId) {
+          const before = jobs.length;
+          for (let i = jobs.length - 1; i >= 0; i--) {
+            const j = jobs[i];
+            if (j.type === "CHAT_REPLY" && j.payload.chatId === chatId && (j.status === "QUEUED" || j.status === "RUNNING")) jobs.splice(i, 1);
+          }
+          return before - jobs.length;
         },
         async hasPendingReply(chatId) {
           return jobs.some((j) => j.type === "CHAT_REPLY" && j.payload.chatId === chatId && (j.status === "QUEUED" || j.status === "RUNNING"));

@@ -32,7 +32,7 @@ export async function apiFetch<T>(path: string, { method = "GET", body, token }:
     throw new ApiError(0, "network_error", "Could not reach the API");
   }
 
-  if (response.ok) return (await response.json()) as T;
+  if (response.ok) return (response.status === 204 ? undefined : await response.json()) as T;
 
   const payload = (await response.json().catch(() => null)) as {
     error?: { code?: string; message?: string; details?: Record<string, unknown> };
@@ -49,6 +49,15 @@ export async function apiFetch<T>(path: string, { method = "GET", body, token }:
 export function apiStream(path: string, token: string, signal: AbortSignal): Promise<Response> {
   return fetch(`${BASE_URL}${API_PREFIX}${path}`, {
     headers: { Accept: "text/event-stream", Authorization: `Bearer ${token}` },
+    cache: "no-store",
+    signal,
+  });
+}
+
+/** For proxying a stored file: the raw upstream response (bytes or JSON) with the teacher's token. */
+export function apiRaw(path: string, token: string, signal: AbortSignal): Promise<Response> {
+  return fetch(`${BASE_URL}${API_PREFIX}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
     signal,
   });

@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { ApiError } from "@/lib/api/errors";
 import { teacherChatsApi } from "@/lib/api/endpoints";
 import type { ChatView, MaterialView, MessageView } from "@/lib/api/types";
@@ -106,6 +107,31 @@ export async function pollChatAction(
       materials: detail.materials,
       replyPending: detail.reply_pending || messagesRes.reply_pending,
     };
+  } catch (error) {
+    return { ok: false, message: describeChatError(error) };
+  }
+}
+
+export async function stopChatReplyAction(chatId: string): Promise<ActionResult> {
+  const { token } = await requireViewer("staff");
+  if (!isUuid(chatId)) return { ok: false, message: "ID percakapan tidak valid." };
+
+  try {
+    await teacherChatsApi.stop(token, chatId);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: describeChatError(error) };
+  }
+}
+
+export async function deleteChatAction(chatId: string): Promise<ActionResult> {
+  const { token } = await requireViewer("staff");
+  if (!isUuid(chatId)) return { ok: false, message: "ID percakapan tidak valid." };
+
+  try {
+    await teacherChatsApi.remove(token, chatId);
+    revalidatePath("/teacher/materials");
+    return { ok: true };
   } catch (error) {
     return { ok: false, message: describeChatError(error) };
   }

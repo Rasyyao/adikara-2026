@@ -121,6 +121,55 @@ describe("teacher · chats (/api/v1/chats)", () => {
     });
   });
 
+  describe("stop", () => {
+    it("cancels the pending reply so reply_pending turns false, and keeps the message", async () => {
+      const { app } = await buildTestApp();
+      const id = await newChat(app);
+      await request(app).post(MESSAGES(id)).set(auth(TEACHER_AUTH)).send({ text: "Rangkum" });
+      expect((await request(app).get(MESSAGES(id)).set(auth(TEACHER_AUTH))).body.reply_pending).toBe(true);
+
+      expect((await request(app).post(`${ONE(id)}/stop`).set(auth(TEACHER_AUTH))).status).toBe(204);
+
+      const after = await request(app).get(MESSAGES(id)).set(auth(TEACHER_AUTH));
+      expect(after.body.reply_pending).toBe(false);
+      expect(after.body.items).toHaveLength(1);
+    });
+
+    it("is harmless when nothing is pending, and 404 for another teacher's chat", async () => {
+      const { app } = await buildTestApp();
+      const id = await newChat(app);
+      expect((await request(app).post(`${ONE(id)}/stop`).set(auth(TEACHER_AUTH))).status).toBe(204);
+      expect((await request(app).post(`${ONE(id)}/stop`).set(auth(OTHER_TEACHER_AUTH))).status).toBe(404);
+    });
+  });
+
+  describe("delete", () => {
+    it("deletes the chat, its messages and the stored file", async () => {
+      const { app, storage } = await buildTestApp();
+      const id = await newChat(app);
+      await request(app)
+        .post(MESSAGES(id))
+        .set(auth(TEACHER_AUTH))
+        .field("text", "Rangkum")
+        .attach("file", PDF, { filename: "modul.pdf", contentType: "application/pdf" });
+      expect(storage.objects.size).toBe(1);
+
+      const res = await request(app).delete(ONE(id)).set(auth(TEACHER_AUTH));
+      expect(res.status).toBe(204);
+      expect(storage.objects.size).toBe(0);
+      expect((await request(app).get(ONE(id)).set(auth(TEACHER_AUTH))).status).toBe(404);
+      expect((await request(app).get(CHATS).set(auth(TEACHER_AUTH))).body.items).toEqual([]);
+    });
+
+    it("answers 404 for another teacher's chat or an unknown one, and leaves it alone", async () => {
+      const { app } = await buildTestApp();
+      const id = await newChat(app);
+      expect((await request(app).delete(ONE(id)).set(auth(OTHER_TEACHER_AUTH))).status).toBe(404);
+      expect((await request(app).delete(ONE(UNKNOWN_ID)).set(auth(TEACHER_AUTH))).status).toBe(404);
+      expect((await request(app).get(ONE(id)).set(auth(TEACHER_AUTH))).status).toBe(200);
+    });
+  });
+
   describe("failure", () => {
     it("another teacher's chat is 404, the same as a missing one, for every chat route", async () => {
       const { app, db } = await buildTestApp();
@@ -241,7 +290,7 @@ describe("teacher · chats (/api/v1/chats)", () => {
     it("a student gets 403 and no token gets 401, on every chat route", async () => {
       const { app } = await buildTestApp();
       const id = await newChat(app);
-      for (const [method, path] of [["get", CHATS], ["post", CHATS], ["get", ONE(id)], ["get", MESSAGES(id)], ["post", MESSAGES(id)]] as const) {
+      for (const [method, path] of [["get", CHATS], ["post", CHATS], ["get", ONE(id)], ["delete", ONE(id)], ["post", `${ONE(id)}/stop`], ["get", MESSAGES(id)], ["post", MESSAGES(id)]] as const) {
         expect((await request(app)[method](path).set(auth(studentAuth("satu"))).send({ text: "hi" })).status, `${method} ${path}`).toBe(403);
         expect((await request(app)[method](path).send({ text: "hi" })).status, `${method} ${path}`).toBe(401);
       }

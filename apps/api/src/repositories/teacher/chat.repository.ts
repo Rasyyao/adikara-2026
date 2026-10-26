@@ -37,6 +37,26 @@ export function createTeacherChatRepository(prisma: PrismaClient): TeacherChatRe
       return prisma.chat.findUnique({ where: { id } });
     },
 
+    async remove(chatId) {
+      return prisma.$transaction(async (tx) => {
+        const links = await tx.chatMaterial.findMany({ where: { chatId }, select: { materialId: true } });
+        const materialIds = links.map((l) => l.materialId);
+        // messages and the chat/material links cascade; class sessions only lose their pointer to the chat
+        await tx.chat.delete({ where: { id: chatId } });
+        const orphans = await tx.material.findMany({
+          where: { id: { in: materialIds }, chats: { none: {} }, packages: { none: {} } },
+          select: { id: true, filePath: true },
+        });
+        await tx.material.deleteMany({ where: { id: { in: orphans.map((o) => o.id) } } });
+        // jobs that have not started would only fail on rows that are gone (one already running is handled by the worker)
+        await tx.job.deleteMany({ where: { status: "QUEUED", type: "CHAT_REPLY", payload: { path: ["chatId"], equals: chatId } } });
+        for (const { id } of orphans) {
+          await tx.job.deleteMany({ where: { status: "QUEUED", type: "EXTRACT", payload: { path: ["materialId"], equals: id } } });
+        }
+        return orphans.map((o) => o.filePath);
+      });
+    },
+
     async listMessages(chatId, { limit, after }) {
       if (after) {
         // Prisma finds the cursor row without the `where`, so a message of another chat must be refused here
@@ -67,6 +87,25 @@ export function createTeacherChatRepository(prisma: PrismaClient): TeacherChatRe
         select: { material: { select: materialSelect } },
       });
       return rows.map((row) => toMaterial(row.material));
+    },
+
+    async findMaterial(chatId, materialId) {
+      const link = await prisma.chatMaterial.findFirst({
+        where: { chatId, materialId },
+        select: { material: { select: { ...materialSelect, filePath: true, extractedText: true } } },
+      });
+      if (!link) return null;
+      const { filePath, extractedText, ...rest } = link.material;
+      return { ...toMaterial(rest), filePath, extractedText };
+    },
+
+    async cancelReply(chatId) {
+      const { count } = await prisma.job.deleteMany({
+        where: { type: "CHAT_REPLY", status: { in: ["QUEUED", "RUNNING"] }, payload: { path: ["chatId"], equals: chatId } },
+      });
+      // wake the listeners of this chat so every open screen stops waiting
+      await prisma.$executeRaw`SELECT pg_notify('chat_events', ${chatId})`;
+      return count;
     },
 
     async hasPendingReply(chatId) {

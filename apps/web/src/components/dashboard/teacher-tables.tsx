@@ -1,9 +1,14 @@
 "use client";
 
-import { CheckCircle2, Clock, Eye, FileEdit, FileText, MessageSquare, Pencil } from "lucide-react";
+import { CheckCircle2, Clock, Eye, FileEdit, FileText, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
+import { deleteChatAction } from "@/app/actions/chats";
 import { StatusChip } from "@/components/session/status-chip";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
+import { isUuid } from "@/lib/validation/auth";
 import type { ClassSummary, MaterialRow, MaterialStatus, SessionRow } from "@/lib/dummy/teacher";
 import { Cell, EmptyRow, Primary, nextSort, PlainHeader, ProgressCell, SortHeader, TableToolbar, type SortState } from "./table-parts";
 
@@ -192,18 +197,41 @@ export function MaterialStatusChip({ status }: { status: MaterialStatus }) {
 type MaterialSort = "title" | "className";
 
 export function MaterialsTable({ title, rows }: { title: string; rows: MaterialRow[] }) {
+  const toast = useToast();
+  const dialogTitleId = useId();
+  const dialogTextId = useId();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("ALL");
   const [sort, setSort] = useState<SortState<MaterialSort> | null>(null);
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<MaterialRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    const result = await deleteChatAction(pendingDelete.id);
+    setDeleting(false);
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+    setRemovedIds((ids) => [...ids, pendingDelete.id]);
+    toast.success(`Materi "${pendingDelete.title}" dihapus.`);
+    setPendingDelete(null);
+  }
 
   const visible = useMemo(() => {
     const filtered = rows.filter(
-      (row) => (status === "ALL" || row.status === status) && matches(query, row.title, row.className, row.subject),
+      (row) =>
+        !removedIds.includes(row.id) &&
+        (status === "ALL" || row.status === status) &&
+        matches(query, row.title, row.className, row.subject),
     );
     if (!sort) return filtered;
     const factor = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => a[sort.key].localeCompare(b[sort.key], "id", { numeric: true }) * factor);
-  }, [rows, query, status, sort]);
+  }, [rows, query, status, sort, removedIds]);
 
   return (
     <section aria-label={title} className={CARD}>
@@ -264,7 +292,7 @@ export function MaterialsTable({ title, rows }: { title: string; rows: MaterialR
                     <MaterialStatusChip status={row.status} />
                   </Cell>
                   <Cell>
-                    <div className="flex items-center justify-end">
+                    <div className="flex items-center justify-end gap-2">
                       <Link
                         href={`/teacher/materials/${row.id}`}
                         className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint hover:text-primary"
@@ -272,6 +300,17 @@ export function MaterialsTable({ title, rows }: { title: string; rows: MaterialR
                         <MessageSquare size={20} strokeWidth={1.75} aria-hidden="true" />
                         Buka chat AI
                       </Link>
+                      {isUuid(row.id) && (
+                        <button
+                          type="button"
+                          onClick={() => setPendingDelete(row)}
+                          title="Hapus materi"
+                          aria-label={`Hapus materi ${row.title}`}
+                          className="flex size-11 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-out hover:bg-bg hover:text-danger"
+                        >
+                          <Trash2 size={20} strokeWidth={1.75} aria-hidden="true" />
+                        </button>
+                      )}
                     </div>
                   </Cell>
                 </tr>
@@ -280,6 +319,30 @@ export function MaterialsTable({ title, rows }: { title: string; rows: MaterialR
           </tbody>
         </table>
       </div>
+
+      <Modal
+        open={pendingDelete !== null}
+        onClose={() => !deleting && setPendingDelete(null)}
+        labelledBy={dialogTitleId}
+        describedBy={dialogTextId}
+        role="alertdialog"
+      >
+        <h2 id={dialogTitleId} className="text-h3 font-semibold text-ink">
+          Hapus materi ini?
+        </h2>
+        <p id={dialogTextId} className="mt-2 text-body text-muted">
+          &ldquo;{pendingDelete?.title}&rdquo; beserta seluruh percakapan AI dan berkas sumbernya akan dihapus permanen. Tindakan ini tidak
+          dapat dibatalkan.
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setPendingDelete(null)} disabled={deleting}>
+            Batal
+          </Button>
+          <Button variant="danger" onClick={() => void confirmDelete()} loading={deleting}>
+            Hapus
+          </Button>
+        </div>
+      </Modal>
     </section>
   );
 }

@@ -17,6 +17,9 @@ export function createMemoryStorage() {
     async remove(key) {
       objects.delete(key);
     },
+    async get(key) {
+      return objects.get(key)?.body ?? null;
+    },
   };
   return storage;
 }
