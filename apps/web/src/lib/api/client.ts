@@ -15,17 +15,18 @@ interface Options {
 /** Calls the Adikara API from the server. The browser never sees the token or talks to the API directly. */
 export async function apiFetch<T>(path: string, { method = "GET", body, token }: Options = {}): Promise<T> {
   let response: Response;
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   try {
     response = await fetch(`${BASE_URL}${API_PREFIX}${path}`, {
       method,
       headers: {
         Accept: "application/json",
-        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(body === undefined || isFormData ? {} : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
       cache: "no-store",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(isFormData ? 30_000 : TIMEOUT_MS),
     });
   } catch {
     throw new ApiError(0, "network_error", "Could not reach the API");

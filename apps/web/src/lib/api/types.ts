@@ -94,3 +94,45 @@ export interface EndSessionResponse {
   session: SessionView;
   attendance: Attendance;
 }
+
+export type ChatMessageRole = "USER" | "ASSISTANT";
+export type MaterialState = "UPLOADED" | "EXTRACTED" | "FAILED";
+
+export interface ChatView {
+  id: string;
+  title: string;
+  created_at: string;
+}
+
+export interface MaterialView {
+  id: string;
+  title: string;
+  file_type: string;
+  status: MaterialState;
+  error: string | null;
+}
+
+export interface MessageView {
+  id: string;
+  role: ChatMessageRole;
+  content: string;
+  sources: string[] | null;
+  created_at: string;
+}
+
+export interface ChatDetail {
+  chat: ChatView;
+  materials: MaterialView[];
+  reply_pending: boolean;
+}
+
+export interface ChatMessagesResponse {
+  items: MessageView[];
+  reply_pending: boolean;
+}
+
+export interface SendMessageResult {
+  message: MessageView;
+  material: MaterialView | null;
+  reply_pending: boolean;
+}

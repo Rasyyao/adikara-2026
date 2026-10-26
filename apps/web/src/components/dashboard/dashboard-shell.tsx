@@ -9,6 +9,7 @@ import { Logo } from "@/components/logo";
 const ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
   classes: Users,
+  materials: BookOpen,
   history: History,
   join: BookOpen,
 };

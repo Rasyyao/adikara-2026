@@ -63,6 +63,16 @@ export function LoginForm() {
     else if (state.fieldErrors?.password) passwordRef.current?.focus();
   }, [state, copy.field, toast]);
 
+  // Adikara does not use a Service Worker. If another app previously ran on localhost:3000 and left one behind,
+  // unregister it so it cannot intercept requests or break hydration.
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) void registration.unregister();
+      });
+    }
+  }, []);
+
   function switchRole(next: LoginRole) {
     if (next === role) return;
     setRole(next);
@@ -84,7 +94,7 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
+    <form action={formAction} onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
       <div>
         <h1 className="text-h1 font-semibold">Masuk ke Adikara</h1>
         <p className="mt-1 text-body text-muted">Pilih peran Anda, lalu masukkan akun dari sekolah.</p>

@@ -3,9 +3,12 @@ import { ref } from "../../docs/schemas.js";
 import { requireAuth } from "../../http/middleware/authenticate.js";
 import { parseUuidParam } from "../../http/validators/shared/common.js";
 import { parseCreateChat, parseMessageQuery, parseMessageText, parseOptionalFile } from "../../http/validators/teacher/chat.js";
+import { subscribeChatEvents } from "../../lib/chat-events.js";
 import type { TeacherChatService } from "../../services/teacher/chat.service.js";
 import { errorDoc } from "../docs-helpers.js";
 import type { RouteGroup } from "../types.js";
+
+const HEARTBEAT_MS = 25_000;
 
 export function teacherChatRoutes(service: TeacherChatService, upload: RequestHandler): RouteGroup {
   const chatId = (req: Request) => parseUuidParam(req.params.id, "id");
@@ -107,6 +110,73 @@ export function teacherChatRoutes(service: TeacherChatService, upload: RequestHa
             404: errorDoc("chat_not_found", "No such chat, or it belongs to another teacher.", "Chat not found"),
             413: errorDoc("file_too_large", "The file is larger than the upload limit.", "File is too large (maximum 20 MB)"),
             503: errorDoc("storage_unavailable", "File storage is not configured on this server.", "File storage is not configured"),
+          },
+        },
+      },
+      {
+        method: "get",
+        path: "/chats/:id/events",
+        access: "staff",
+        handler: async (req, res) => {
+          const auth = requireAuth(req);
+          const id = chatId(req);
+
+          const fetchSnapshot = async () => {
+            const [chatDetail, msgList] = await Promise.all([
+              service.get(auth, id),
+              service.messages(auth, id, { limit: 100 }),
+            ]);
+            return {
+              materials: chatDetail.materials,
+              messages: msgList.items,
+              reply_pending: msgList.reply_pending,
+            };
+          };
+
+          const initial = await fetchSnapshot();
+
+          res.status(200).set({
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            Connection: "keep-alive",
+            "X-Accel-Buffering": "no",
+          });
+          res.flushHeaders();
+          res.write(`event: snapshot\ndata: ${JSON.stringify(initial)}\n\n`);
+
+          const unsubscribe = subscribeChatEvents(id, () => {
+            void fetchSnapshot()
+              .then((payload) => {
+                if (!res.writableEnded) {
+                  res.write(`event: update\ndata: ${JSON.stringify(payload)}\n\n`);
+                }
+              })
+              .catch(() => {
+                // ignore transient read error
+              });
+          });
+
+          const heartbeat = setInterval(() => {
+            if (!res.writableEnded) res.write(": ping\n\n");
+          }, HEARTBEAT_MS);
+
+          res.on("close", () => {
+            clearInterval(heartbeat);
+            unsubscribe();
+          });
+        },
+        doc: {
+          summary: "Live chat & material updates (Server-Sent Events)",
+          description:
+            "A long-lived `text/event-stream` that pushes `snapshot` on connect and `update` whenever the Python worker " +
+            "finishes extracting a material or writing an AI reply (`NOTIFY chat_events`).",
+          responses: {
+            200: {
+              description: "The chat event stream",
+              contentType: "text/event-stream",
+              schema: { type: "string" },
+            },
+            404: errorDoc("chat_not_found", "No such chat, or it belongs to another teacher.", "Chat not found"),
           },
         },
       },

@@ -1,0 +1,37 @@
+import type { NextRequest } from "next/server";
+import { apiStream } from "@/lib/api/client";
+import { getToken } from "@/lib/auth/cookie";
+import { isUuid } from "@/lib/validation/auth";
+
+function problem(status: number, code: string, message: string) {
+  return Response.json({ error: { code, message } }, { status });
+}
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!isUuid(id)) return problem(400, "validation_error", "Invalid chat id");
+
+  const token = await getToken();
+  if (!token) return problem(401, "unauthorized", "Not logged in");
+
+  let upstream: Response;
+  try {
+    upstream = await apiStream(`/chats/${id}/events`, token, request.signal);
+  } catch {
+    return problem(502, "network_error", "Could not reach the API");
+  }
+
+  if (!upstream.ok || !upstream.body) {
+    const body = await upstream.json().catch(() => null);
+    return Response.json(body ?? { error: { code: "unknown_error", message: "Stream failed" } }, { status: upstream.status });
+  }
+
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}

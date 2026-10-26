@@ -2,12 +2,16 @@ import "server-only";
 import { apiFetch } from "./client";
 import type {
   Attendance,
+  ChatDetail,
+  ChatMessagesResponse,
+  ChatView,
   ClassView,
   EndSessionResponse,
   JoinResult,
   LiveSession,
   LoginResult,
   PublicUser,
+  SendMessageResult,
   SessionDetail,
   SessionView,
 } from "./types";
@@ -43,4 +47,20 @@ export const teacherSessionsApi = {
 
 export const studentSessionsApi = {
   join: (token: string, code: string) => apiFetch<JoinResult>("/sessions/join", { method: "POST", token, body: { code } }),
+};
+
+export const teacherChatsApi = {
+  list: (token: string) => apiFetch<{ items: ChatView[] }>("/chats", { token }),
+  create: (token: string, title?: string) =>
+    apiFetch<{ chat: ChatView }>("/chats", { method: "POST", token, body: title ? { title } : {} }),
+  get: (token: string, id: string) => apiFetch<ChatDetail>(`/chats/${id}`, { token }),
+  messages: (token: string, id: string, query?: { limit?: number; after?: string }) => {
+    const params = new URLSearchParams();
+    if (query?.limit) params.set("limit", String(query.limit));
+    if (query?.after) params.set("after", query.after);
+    const qs = params.toString();
+    return apiFetch<ChatMessagesResponse>(`/chats/${id}/messages${qs ? `?${qs}` : ""}`, { token });
+  },
+  send: (token: string, id: string, payload: FormData | { text: string }) =>
+    apiFetch<SendMessageResult>(`/chats/${id}/messages`, { method: "POST", token, body: payload }),
 };

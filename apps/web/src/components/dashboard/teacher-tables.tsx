@@ -1,9 +1,10 @@
 "use client";
 
-import { Eye, Pencil } from "lucide-react";
+import { CheckCircle2, Clock, Eye, FileEdit, FileText, MessageSquare, Pencil } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { StatusChip } from "@/components/session/status-chip";
-import type { ClassSummary, SessionRow } from "@/lib/dummy/teacher";
+import type { ClassSummary, MaterialRow, MaterialStatus, SessionRow } from "@/lib/dummy/teacher";
 import { Cell, EmptyRow, Primary, nextSort, PlainHeader, ProgressCell, SortHeader, TableToolbar, type SortState } from "./table-parts";
 
 const CARD = "overflow-hidden rounded-lg bg-surface";
@@ -161,6 +162,117 @@ export function ClassesTable({ title, rows }: { title: string; rows: ClassSummar
                   <Cell className="whitespace-nowrap text-muted">{row.lastSession}</Cell>
                   <Cell>
                     <ClassActions name={row.name} />
+                  </Cell>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+const MATERIAL_CHIPS: Record<MaterialStatus, { label: string; Icon: typeof CheckCircle2; tone: string }> = {
+  DIPUBLIKASIKAN: { label: "Dipublikasikan", Icon: CheckCircle2, tone: "text-success" },
+  DISETUJUI: { label: "Disetujui", Icon: Clock, tone: "text-primary" },
+  DRAF: { label: "Draf", Icon: FileEdit, tone: "text-warning" },
+};
+
+export function MaterialStatusChip({ status }: { status: MaterialStatus }) {
+  const { label, Icon, tone } = MATERIAL_CHIPS[status];
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-1 text-small font-semibold ${tone}`}>
+      <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+type MaterialSort = "title" | "className";
+
+export function MaterialsTable({ title, rows }: { title: string; rows: MaterialRow[] }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("ALL");
+  const [sort, setSort] = useState<SortState<MaterialSort> | null>(null);
+
+  const visible = useMemo(() => {
+    const filtered = rows.filter(
+      (row) => (status === "ALL" || row.status === status) && matches(query, row.title, row.className, row.subject),
+    );
+    if (!sort) return filtered;
+    const factor = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => a[sort.key].localeCompare(b[sort.key], "id", { numeric: true }) * factor);
+  }, [rows, query, status, sort]);
+
+  return (
+    <section aria-label={title} className={CARD}>
+      <TableToolbar
+        title={title}
+        query={query}
+        onQuery={setQuery}
+        placeholder="Cari judul materi atau kelas…"
+        filterLabel="Status materi"
+        options={[
+          { value: "ALL", label: "Semua status" },
+          { value: "DIPUBLIKASIKAN", label: "Dipublikasikan" },
+          { value: "DISETUJUI", label: "Disetujui" },
+          { value: "DRAF", label: "Draf" },
+        ]}
+        filter={status}
+        onFilter={setStatus}
+      />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] border-collapse">
+          <thead>
+            <tr className={HEAD_ROW}>
+              <SortHeader label="Materi" sortKey="title" sort={sort} onSort={(key) => setSort((s) => nextSort(s, key))} />
+              <SortHeader label="Kelas" sortKey="className" sort={sort} onSort={(key) => setSort((s) => nextSort(s, key))} />
+              <PlainHeader>Berkas sumber</PlainHeader>
+              <PlainHeader>Terakhir diubah</PlainHeader>
+              <PlainHeader>Status</PlainHeader>
+              <PlainHeader>
+                <span className="block text-right">Aksi</span>
+              </PlainHeader>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.length === 0 ? (
+              <EmptyRow colSpan={6} query={query} />
+            ) : (
+              visible.map((row) => (
+                <tr key={row.id} className={BODY_ROW}>
+                  <Cell>
+                    <Link href={`/teacher/materials/${row.id}`} className="group block">
+                      <p className="text-body font-semibold text-ink transition-colors duration-150 ease-out group-hover:text-primary">
+                        {row.title}
+                      </p>
+                      <p className="truncate text-small text-muted">{row.subject}</p>
+                    </Link>
+                  </Cell>
+                  <Cell>
+                    <span className="font-semibold text-ink">{row.className}</span>
+                  </Cell>
+                  <Cell>
+                    <span className="inline-flex items-center gap-2 text-muted">
+                      <FileText size={20} strokeWidth={1.75} aria-hidden="true" />
+                      {row.sources.length} berkas ({row.sources.map((s) => s.fileType).join(", ")})
+                    </span>
+                  </Cell>
+                  <Cell className="whitespace-nowrap text-muted">{row.updatedAt}</Cell>
+                  <Cell>
+                    <MaterialStatusChip status={row.status} />
+                  </Cell>
+                  <Cell>
+                    <div className="flex items-center justify-end">
+                      <Link
+                        href={`/teacher/materials/${row.id}`}
+                        className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint hover:text-primary"
+                      >
+                        <MessageSquare size={20} strokeWidth={1.75} aria-hidden="true" />
+                        Buka chat AI
+                      </Link>
+                    </div>
                   </Cell>
                 </tr>
               ))

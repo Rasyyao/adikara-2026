@@ -232,3 +232,51 @@ h1, h2, h3 {
     opacity: 0;
   }
 }
+
+/* ---- Chatbot: smooth entry for messages/attachments and pop for completed uploads ---- */
+
+.chat-item-in {
+  animation: chat-slide-up 220ms var(--ease) both;
+}
+
+.upload-check-pop {
+  animation: icon-pop 380ms cubic-bezier(0.34, 1.8, 0.64, 1) both;
+}
+
+.thinking-text {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    var(--primary) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% auto;
+  color: transparent;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: thinking-shimmer 1.8s linear infinite;
+}
+
+@keyframes thinking-shimmer {
+  to {
+    background-position: -200% center;
+  }
+}
+
+@keyframes chat-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-item-in {
+    animation: overlay-fade-in 150ms var(--ease) both;
+  }
+  .thinking-text {
+    animation: none;
+    background: none;
+    color: var(--muted);
+  }
+}
