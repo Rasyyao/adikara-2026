@@ -46,6 +46,20 @@ export function parseMessageText(body: unknown): string {
   return text;
 }
 
+export const MAX_EDITED_CONTENT_CHARS = 100_000;
+
+/** The new content of an assistant reply the teacher edited (a mindmap is a long JSON block, so the limit is generous). */
+export function parseEditedContent(body: unknown): string {
+  const fields: Fields = {};
+  const record = typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  const content = typeof record.content === "string" ? record.content.trim() : "";
+  if (content.length === 0) fields.content = "is required";
+  else if (content.length > MAX_EDITED_CONTENT_CHARS) fields.content = `must be at most ${MAX_EDITED_CONTENT_CHARS} characters`;
+  else if (TEXT_CONTROL_CHARS.test(content)) fields.content = "must not contain control characters";
+  throwIfInvalid(fields);
+  return content;
+}
+
 export interface ValidFile {
   title: string;
   extension: string;

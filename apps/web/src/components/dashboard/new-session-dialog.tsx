@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { CreateSessionForm } from "@/components/session/create-session-form";
 import { Modal } from "@/components/ui/modal";
-import type { ClassView } from "@/lib/api/types";
+import type { ChatView, ClassView } from "@/lib/api/types";
 
 /** Sidebar button that opens the start-session form in a dialog. Starting a session navigates away, which closes it. */
-export function NewSessionDialog({ classes }: { classes: ClassView[] }) {
+export function NewSessionDialog({ classes, materials }: { classes: ClassView[]; materials: ChatView[] }) {
   const pathname = usePathname();
   const [openOn, setOpenOn] = useState<string | null>(null);
   const open = openOn === pathname;
@@ -40,7 +40,7 @@ export function NewSessionDialog({ classes }: { classes: ClassView[] }) {
         </div>
         <p className="text-small text-muted">Pilih kelas, lalu bagikan PIN ke siswa.</p>
         <div className="mt-4">
-          <CreateSessionForm classes={classes} />
+          <CreateSessionForm classes={classes} materials={materials} />
         </div>
       </Modal>
     </>

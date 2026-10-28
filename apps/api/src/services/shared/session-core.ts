@@ -85,8 +85,15 @@ export function createSessionCore(
     },
 
     async detail(session) {
-      const participants = await sessions.listParticipants(session.id);
-      return { session: toSessionView(session), participants: participants.map(toParticipantView) };
+      const [participants, chat] = await Promise.all([
+        sessions.listParticipants(session.id),
+        session.chatId ? sessions.findChatSummary(session.chatId) : null,
+      ]);
+      return {
+        session: toSessionView(session),
+        material: chat ? { id: chat.id, title: chat.title } : null,
+        participants: participants.map(toParticipantView),
+      };
     },
 
     async countJoined(sessionId) {

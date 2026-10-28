@@ -1,9 +1,11 @@
 "use client";
 
-import { Check, Copy, Lock, LockOpen, Play, UserMinus, Users } from "lucide-react";
+import { BookOpen, Check, Copy, ExternalLink, Lock, LockOpen, PenTool, Play, UserMinus, Users } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import {
+  assignMaterialAction,
   endSessionAction,
   kickParticipantAction,
   setLockedAction,
@@ -13,8 +15,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
-import type { ParticipantView, SessionStatus, SessionView } from "@/lib/api/types";
+import type { BoardScene, ChatView, ParticipantView, SessionMaterial, SessionStatus, SessionView } from "@/lib/api/types";
 import { ConnectionBadge } from "./connection-badge";
+import type { BoardMaterialInfo } from "./board/material-panel";
+import { SessionWhiteboard } from "./session-whiteboard";
 import { BackLink } from "./back-link";
 import { StatusChip } from "./status-chip";
 import { useSessionStream, type StreamHandler } from "./use-session-stream";
@@ -22,7 +26,13 @@ import { useSessionStream, type StreamHandler } from "./use-session-stream";
 interface Props {
   sessionId: string;
   className: string;
-  initial: { session: SessionView; participants: ParticipantView[] };
+  initial: { session: SessionView; material: SessionMaterial | null; participants: ParticipantView[] };
+  /** The teacher's prepared materials, to pick one for this session. */
+  materials: ChatView[];
+  /** The saved whiteboard, if the teacher drew on it before. */
+  board: BoardScene | null;
+  /** The assigned material with its mindmaps and tests, for the whiteboard's material panel. */
+  materialInfo: BoardMaterialInfo | null;
 }
 
 interface LiveState {
@@ -37,7 +47,8 @@ function upsert(list: ParticipantView[], next: ParticipantView): ParticipantView
   return exists ? list.map((p) => (p.student_id === next.student_id ? next : p)) : [...list, next];
 }
 
-export function TeacherLiveSession({ sessionId, className, initial }: Props) {
+export function TeacherLiveSession({ sessionId, className, initial, materials, board, materialInfo }: Props) {
+  const [view, setView] = useState<"control" | "board">("control");
   const router = useRouter();
   const [live, setLive] = useState<LiveState>({
     status: initial.session.status,
@@ -46,6 +57,7 @@ export function TeacherLiveSession({ sessionId, className, initial }: Props) {
     participants: initial.participants,
   });
   const [announcement, setAnnouncement] = useState("");
+  const [material, setMaterial] = useState<SessionMaterial | null>(initial.material);
   const toast = useToast();
   const [copied, setCopied] = useState(false);
   const [confirm, setConfirm] = useState<null | { kind: "end" } | { kind: "kick"; student: ParticipantView }>(null);
@@ -121,6 +133,16 @@ export function TeacherLiveSession({ sessionId, className, initial }: Props) {
 
   const joined = live.participants.filter((p) => p.state === "joined");
 
+  function changeMaterial(chatId: string) {
+    startTransition(async () => {
+      const result = await assignMaterialAction(sessionId, chatId || null);
+      if (!result.ok) return toast.error(result.message);
+      setMaterial(result.material);
+      router.refresh(); // the whiteboard's material panel reads the new material from the server
+      toast.success(result.material ? `Materi "${result.material.title}" dipasang ke sesi.` : "Materi dilepas dari sesi.");
+    });
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -135,7 +157,35 @@ export function TeacherLiveSession({ sessionId, className, initial }: Props) {
         </div>
       </header>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <div role="tablist" aria-label="Tampilan sesi" className="flex gap-2">
+        {(
+          [
+            { id: "control", label: "Kontrol sesi", Icon: Users },
+            { id: "board", label: "Papan tulis", Icon: PenTool },
+          ] as const
+        ).map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={view === id}
+            onClick={() => setView(id)}
+            className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-body font-semibold transition-colors ${
+              view === id ? "border-primary bg-surface text-primary" : "border-border bg-bg text-muted hover:border-primary/50 hover:text-ink"
+            }`}
+          >
+            <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* The board stays mounted while hidden, so the drawing, zoom and undo history survive a switch of tab */}
+      <div className={view === "board" ? "" : "hidden"}>
+        <SessionWhiteboard sessionId={sessionId} initial={board} material={materialInfo} />
+      </div>
+
+      <div className={`grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] ${view === "control" ? "" : "hidden"}`}>
         <section aria-label="PIN sesi" className="flex flex-col gap-4 rounded-lg bg-surface p-6">
           <div>
             <h2 className="text-h3 font-semibold">PIN untuk siswa</h2>
@@ -179,6 +229,43 @@ export function TeacherLiveSession({ sessionId, className, initial }: Props) {
           </div>
         </section>
 
+        <div className="flex flex-col gap-6">
+        <section aria-label="Materi kelas" className="flex flex-col gap-3 rounded-lg bg-surface p-6">
+          <div className="flex items-center gap-2">
+            <BookOpen size={20} strokeWidth={1.75} aria-hidden="true" />
+            <h2 className="text-h3 font-semibold">Materi kelas</h2>
+          </div>
+          <p className="text-small text-muted">Pasang materi yang sudah Anda siapkan (berkas, mindmap, dan soal), lalu buka saat kelas berjalan.</p>
+          <select
+            aria-label="Materi untuk sesi ini"
+            value={material?.id ?? ""}
+            onChange={(event) => changeMaterial(event.target.value)}
+            disabled={pending}
+            className="block min-h-12 w-full rounded-md border border-border bg-surface px-4 text-body text-ink"
+          >
+            <option value="">Belum ada materi</option>
+            {material && !materials.some((m) => m.id === material.id) && <option value={material.id}>{material.title}</option>}
+            {materials.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title}
+              </option>
+            ))}
+          </select>
+          {material ? (
+            <Link
+              href={`/teacher/materials/${material.id}`}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-body font-semibold text-white transition-colors hover:bg-primary-hover"
+            >
+              <ExternalLink size={18} strokeWidth={1.75} aria-hidden="true" />
+              Buka materi: {material.title}
+            </Link>
+          ) : (
+            <p className="rounded-md border border-dashed border-border p-4 text-center text-small text-muted">
+              {materials.length === 0 ? "Anda belum punya materi. Buat dulu di menu Materi." : "Pilih materi di atas untuk dipakai di kelas ini."}
+            </p>
+          )}
+        </section>
+
         <section aria-label="Siswa yang bergabung" className="rounded-lg bg-surface p-6">
           <div className="flex items-center gap-2">
             <Users size={20} strokeWidth={1.75} aria-hidden="true" />
@@ -219,6 +306,7 @@ export function TeacherLiveSession({ sessionId, className, initial }: Props) {
             {announcement}
           </p>
         </section>
+        </div>
       </div>
 
       <ConfirmDialog

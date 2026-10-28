@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  ClipboardList,
   Clock,
   Copy,
   Download,
@@ -33,15 +34,25 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { sendChatMessageAction, stopChatReplyAction } from "@/app/actions/chats";
+import { editMessageAction, sendChatMessageAction, stopChatReplyAction } from "@/app/actions/chats";
+import {
+  AssessmentBoard,
+  assessmentKindLabel,
+  extractAssessmentsFromContent,
+  replaceAssessmentsInContent,
+  StatusBadge,
+  type AssessmentPayload,
+} from "@/components/materials/assessment-editor";
 import {
   extractMindmapFromContent,
   MindmapBoard,
+  replaceMindmapInContent,
   type MindmapPayload,
 } from "@/components/materials/mindmap-canvas";
 import { Button } from "@/components/ui/button";
@@ -341,6 +352,14 @@ function getThinkingSteps(lastUser?: ChatMessageItem): string[] {
       "Menyelesaikan mindmap…",
     ];
   }
+  if (/pre[\s-]?test|pos[t]?[\s-]?test/.test(text)) {
+    return [
+      "Thinking…",
+      "Membaca seluruh materi…",
+      "Menyusun 10 soal pilihan ganda…",
+      "Memeriksa kunci jawaban dan pengecoh…",
+    ];
+  }
   if (hasFile) {
     return [
       "Thinking…",
@@ -516,10 +535,49 @@ function renderListItemLines(lines: string[], keyPrefix: string) {
 function FormattedContent({
   content,
   onOpenMindmap,
+  onOpenAssessment,
 }: {
   content: string;
   onOpenMindmap?: (mindmap: MindmapPayload) => void;
+  onOpenAssessment?: () => void;
 }) {
+  const extractedAssessment = extractAssessmentsFromContent(content);
+  if (extractedAssessment) {
+    return (
+      <div className="flex flex-col gap-3 text-body text-ink">
+        {extractedAssessment.introText && <FormattedContent content={extractedAssessment.introText} />}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface p-4">
+          <div className="flex items-center gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-tint text-primary">
+              <ClipboardList size={20} strokeWidth={1.75} aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-body font-semibold text-ink">{extractedAssessment.assessments[0].title}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                {extractedAssessment.assessments.map((a) => (
+                  <span key={a.kind} className="inline-flex items-center gap-1.5 text-caption text-muted">
+                    {assessmentKindLabel(a.kind)} · {a.questions.length} soal
+                    <StatusBadge status={a.status} />
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          {onOpenAssessment && (
+            <button
+              type="button"
+              onClick={onOpenAssessment}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-primary px-3.5 py-1.5 text-caption font-semibold text-white transition-colors hover:bg-primary-hover"
+            >
+              <ClipboardList size={14} strokeWidth={1.75} aria-hidden="true" />
+              <span>{extractedAssessment.assessments.every((a) => a.status === "approved") ? "Lihat Soal" : "Periksa & Setujui"}</span>
+            </button>
+          )}
+        </div>
+        {extractedAssessment.outroText && <FormattedContent content={extractedAssessment.outroText} />}
+      </div>
+    );
+  }
   const extractedMindmap = extractMindmapFromContent(content);
   if (extractedMindmap) {
     return (
@@ -837,7 +895,12 @@ function SourceViewer({ chatId, source, onClose }: { chatId: string; source: Mat
   );
 }
 
-type RightSidebarTabId = "sources" | "mindmap";
+/** The right panel (mindmap, questions) starts at half the screen; dragging its edge left widens it, the chat gets the rest. */
+const MINDMAP_DEFAULT_PCT = 50;
+const MINDMAP_MAX_PCT = 70;
+const MINDMAP_MIN_PCT = 25;
+
+type RightSidebarTabId = "sources" | "mindmap" | "assessment";
 
 const SIDEBAR_TABS: Array<{
   id: RightSidebarTabId;
@@ -846,6 +909,7 @@ const SIDEBAR_TABS: Array<{
 }> = [
   { id: "sources", label: "Sumber", Icon: FolderOpen },
   { id: "mindmap", label: "Mindmap", Icon: Network },
+  { id: "assessment", label: "Soal", Icon: ClipboardList },
 ];
 
 export function MaterialChatbot({
@@ -888,6 +952,11 @@ export function MaterialChatbot({
     initialHasMindmap ? "mindmap" : "sources",
   );
   const [customMindmap, setCustomMindmap] = useState<MindmapPayload | null>(null);
+  // the message the mindmap on the board came from, so an edit is saved back into it
+  const [customMindmapMsgId, setCustomMindmapMsgId] = useState<string | null>(null);
+  const [mindmapWidthPct, setMindmapWidthPct] = useState(MINDMAP_DEFAULT_PCT);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [viewingSourceId, setViewingSourceId] = useState<string | null>(null);
   const viewingSource = sources.find((s) => s.id === viewingSourceId) ?? null;
@@ -905,6 +974,112 @@ export function MaterialChatbot({
   }, [messages]);
 
   const activeMindmap = customMindmap ?? latestMindmapEntry?.mindmap ?? null;
+  const activeMindmapMsgId = customMindmap ? customMindmapMsgId : (latestMindmapEntry?.id ?? null);
+
+  /** Stores the teacher's edited mindmap in the AI message it belongs to. */
+  async function saveMindmap(next: MindmapPayload): Promise<boolean> {
+    const target = messages.find((m) => m.id === activeMindmapMsgId);
+    if (!chatId || !target || !isUuid(target.id)) {
+      toast.error("Mindmap ini belum tersimpan di percakapan, jadi belum bisa disimpan.");
+      return false;
+    }
+    const result = await editMessageAction(chatId, target.id, replaceMindmapInContent(target.content, next));
+    if (!result.ok) {
+      toast.error(result.message);
+      return false;
+    }
+    const saved = result.saved;
+    setMessages((prev) => prev.map((m) => (m.id === saved.id ? { ...m, content: saved.content } : m)));
+    if (customMindmap) setCustomMindmap(extractMindmapFromContent(saved.content)?.mindmap ?? next);
+    toast.success("Perubahan mindmap disimpan.");
+    return true;
+  }
+
+  const [openAssessmentMsgId, setOpenAssessmentMsgId] = useState<string | null>(null);
+  const [openAssessmentKind, setOpenAssessmentKind] = useState<"pretest" | "posttest" | null>(null);
+  const prevAssessmentMsgIdRef = useRef<string | null>(null);
+
+  const latestAssessmentEntry = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === "ASSISTANT") {
+        const extracted = extractAssessmentsFromContent(msg.content);
+        if (extracted) return { id: msg.id, assessments: extracted.assessments };
+      }
+    }
+    return null;
+  }, [messages]);
+
+  const activeAssessmentEntry = useMemo(() => {
+    const opened = messages.find((m) => m.id === openAssessmentMsgId);
+    const extracted = opened ? extractAssessmentsFromContent(opened.content) : null;
+    return opened && extracted ? { id: opened.id, assessments: extracted.assessments } : latestAssessmentEntry;
+  }, [messages, openAssessmentMsgId, latestAssessmentEntry]);
+
+  // the newest test of each kind, whichever message holds it, for the cards in the Sumber tab
+  const assessmentSlots = useMemo(
+    () =>
+      (["pretest", "posttest"] as const).map((kind) => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role !== "ASSISTANT") continue;
+          const found = extractAssessmentsFromContent(messages[i].content)?.assessments.find((a) => a.kind === kind);
+          if (found) return { kind, entry: { messageId: messages[i].id, assessment: found } };
+        }
+        return { kind, entry: null };
+      }),
+    [messages],
+  );
+
+  /** Stores the teacher's edited pre-test/post-test in the AI message it belongs to. */
+  async function saveAssessments(next: AssessmentPayload[]): Promise<boolean> {
+    const target = messages.find((m) => m.id === activeAssessmentEntry?.id);
+    if (!chatId || !target || !isUuid(target.id)) {
+      toast.error("Soal ini belum tersimpan di percakapan, jadi belum bisa disimpan.");
+      return false;
+    }
+    const result = await editMessageAction(chatId, target.id, replaceAssessmentsInContent(target.content, next));
+    if (!result.ok) {
+      toast.error(result.message);
+      return false;
+    }
+    const saved = result.saved;
+    setMessages((prev) => prev.map((m) => (m.id === saved.id ? { ...m, content: saved.content } : m)));
+    const before = activeAssessmentEntry?.assessments ?? [];
+    const approvedNow = next.some((a) => a.status === "approved" && before.find((b) => b.kind === a.kind)?.status !== "approved");
+    const reopened = next.some((a) => a.status === "draft" && before.find((b) => b.kind === a.kind)?.status === "approved");
+    toast.success(approvedNow ? "Soal disetujui." : reopened ? "Soal dibuka kembali sebagai draf." : "Draf soal disimpan.");
+    return true;
+  }
+
+  // Open the Soal tab when a new pre-test/post-test message arrives
+  useEffect(() => {
+    if (!latestAssessmentEntry) return;
+    if (prevAssessmentMsgIdRef.current !== latestAssessmentEntry.id) {
+      prevAssessmentMsgIdRef.current = latestAssessmentEntry.id;
+      setOpenAssessmentMsgId(null);
+      setOpenAssessmentKind(null);
+      setActiveTab("assessment");
+      setSidebarOpen(true);
+    }
+  }, [latestAssessmentEntry]);
+
+  const resizingRef = useRef(false);
+  function stopResizing() {
+    resizingRef.current = false;
+    setIsResizingSidebar(false);
+  }
+
+  function clampMindmapWidth(pct: number) {
+    return Math.min(MINDMAP_MAX_PCT, Math.max(MINDMAP_MIN_PCT, pct));
+  }
+
+  function resizeSidebarTo(clientX: number) {
+    const row = sidebarRef.current?.parentElement;
+    if (!row) return;
+    const rect = row.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    setMindmapWidthPct(clampMindmapWidth(((rect.right - clientX) / rect.width) * 100));
+  }
 
   // Automatically open the right sidebar to Mindmap tab when a new mindmap message arrives
   useEffect(() => {
@@ -912,6 +1087,7 @@ export function MaterialChatbot({
     if (prevMindmapMsgIdRef.current !== latestMindmapEntry.id) {
       prevMindmapMsgIdRef.current = latestMindmapEntry.id;
       setCustomMindmap(null);
+      setCustomMindmapMsgId(null);
       setActiveTab("mindmap");
       setSidebarOpen(true);
     }
@@ -1178,6 +1354,9 @@ export function MaterialChatbot({
     setSources([]);
     setMessages([]);
     setCustomMindmap(null);
+    setCustomMindmapMsgId(null);
+    setOpenAssessmentMsgId(null);
+    setOpenAssessmentKind(null);
     setActiveTab("sources");
     setStagedFile(null);
     setRawFile(null);
@@ -1197,6 +1376,21 @@ export function MaterialChatbot({
       `Tolong buatkan kerangka mindmap hierarkis (topik utama, sub-topik, dan poin kunci) yang mudah dipahami dari materi ${targetLabel}.`,
     );
   }
+
+  function handleGenerateAssessment(kind: "pretest" | "posttest" | "both") {
+    const sourceNames = sources.map((s) => s.title).join(", ");
+    const targetLabel = sourceNames || title;
+    const request = {
+      pretest: "Pre-Test",
+      posttest: "Post-Test",
+      both: "Pre-Test dan Post-Test",
+    }[kind];
+    setActiveTab("assessment");
+    setSidebarOpen(true);
+    void submitMessage(`Tolong buatkan ${request} pilihan ganda dari materi ${targetLabel}.`);
+  }
+
+  const widePanel = activeTab === "mindmap" || activeTab === "assessment";
 
   return (
     <div
@@ -1293,8 +1487,9 @@ export function MaterialChatbot({
       <div className="flex min-h-0 flex-1 overflow-hidden bg-surface">
         <section
           aria-label="Percakapan asisten AI"
-          className={`flex min-w-0 flex-col overflow-hidden bg-surface transition-all duration-200 ${
-            sidebarOpen && activeTab === "mindmap" ? "w-full lg:w-1/2" : "flex-1"
+          style={sidebarOpen && widePanel ? ({ "--panel-w": `${mindmapWidthPct}%` } as CSSProperties) : undefined}
+          className={`flex min-w-0 flex-col overflow-hidden bg-surface ${isResizingSidebar ? "" : "transition-[width] duration-200"} ${
+            sidebarOpen && widePanel ? "w-full lg:w-[calc(100%-var(--panel-w))] lg:flex-none" : "flex-1"
           }`}
         >
           {/* Scrollable middle area with wider max-w-5xl reading & chat column */}
@@ -1368,7 +1563,14 @@ export function MaterialChatbot({
                         content={message.content}
                         onOpenMindmap={(mm) => {
                           setCustomMindmap(mm);
+                          setCustomMindmapMsgId(message.id);
                           setActiveTab("mindmap");
+                          setSidebarOpen(true);
+                        }}
+                        onOpenAssessment={() => {
+                          setOpenAssessmentMsgId(message.id);
+                          setOpenAssessmentKind(null);
+                          setActiveTab("assessment");
                           setSidebarOpen(true);
                         }}
                       />
@@ -1500,11 +1702,55 @@ export function MaterialChatbot({
         {/* NotebookLM-style Right Studio Sidebar: collapsible rail + extensible feature tabs */}
         {sidebarOpen ? (
           <aside
+            ref={sidebarRef}
             aria-label="Sidebar Studio & Materi"
-            className={`fixed inset-y-16 right-0 z-20 flex max-w-full shrink-0 flex-col overflow-hidden border-l border-border bg-surface shadow-[var(--shadow-overlay)] transition-all duration-200 lg:static lg:z-auto lg:shadow-none ${
-              activeTab === "mindmap" ? "w-full lg:w-1/2" : "w-80 sm:w-96"
-            }`}
+            style={widePanel ? ({ "--mindmap-w": `${mindmapWidthPct}%` } as CSSProperties) : undefined}
+            className={`fixed inset-y-16 right-0 z-20 flex max-w-full shrink-0 flex-col overflow-hidden border-l border-border bg-surface shadow-[var(--shadow-overlay)] lg:relative lg:inset-y-0 lg:z-auto lg:shadow-none ${
+              isResizingSidebar ? "" : "transition-[width] duration-200"
+            } ${widePanel ? "w-full lg:w-[var(--mindmap-w)]" : "w-80 sm:w-96"}`}
           >
+            {/* Drag the left edge to change the mindmap width (desktop only, at most half of the screen) */}
+            {widePanel && (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Ubah lebar mindmap"
+                aria-valuemin={MINDMAP_MIN_PCT}
+                aria-valuemax={MINDMAP_MAX_PCT}
+                aria-valuenow={Math.round(mindmapWidthPct)}
+                tabIndex={0}
+                title="Geser untuk mengubah lebar · klik 2x untuk mengembalikan"
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.preventDefault();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  resizingRef.current = true;
+                  setIsResizingSidebar(true);
+                }}
+                onPointerMove={(event) => {
+                  if (!resizingRef.current) return;
+                  // the button was released somewhere we did not hear about: end the drag instead of following the mouse
+                  if (event.buttons === 0) return stopResizing();
+                  resizeSidebarTo(event.clientX);
+                }}
+                onPointerUp={stopResizing}
+                onPointerCancel={stopResizing}
+                onLostPointerCapture={stopResizing}
+                onDoubleClick={() => setMindmapWidthPct(MINDMAP_DEFAULT_PCT)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") {
+                    event.preventDefault();
+                    setMindmapWidthPct((w) => clampMindmapWidth(w + 2));
+                  } else if (event.key === "ArrowRight") {
+                    event.preventDefault();
+                    setMindmapWidthPct((w) => clampMindmapWidth(w - 2));
+                  }
+                }}
+                className={`absolute inset-y-0 left-0 z-10 hidden w-3 cursor-col-resize touch-none select-none transition-colors hover:bg-primary/30 focus-visible:bg-primary/40 lg:block ${
+                  isResizingSidebar ? "bg-primary/40" : ""
+                }`}
+              />
+            )}
             {/* NotebookLM-style Sidebar Tab Bar */}
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
               <nav aria-label="Menu fitur materi" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
@@ -1634,6 +1880,58 @@ export function MaterialChatbot({
 
                 <hr className="mt-auto border-border" />
 
+                <div>
+                  <h2 className="text-h3 font-semibold text-ink">Soal asesmen</h2>
+                  <p className="text-caption text-muted">Setujui soal agar tersimpan di sini; Pre-Test dan Post-Test dibuat terpisah.</p>
+                </div>
+                <ul className="flex flex-col gap-2.5">
+                  {assessmentSlots.map(({ kind, entry }) => (
+                    <li key={kind} className="chat-item-in flex flex-col gap-2 rounded-md border border-border bg-bg p-3">
+                      <div className="flex items-start gap-2.5">
+                        <span
+                          aria-hidden="true"
+                          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary-tint text-primary"
+                        >
+                          <ClipboardList size={18} strokeWidth={1.75} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-small font-semibold text-ink" title={entry?.assessment.title}>
+                            {entry?.assessment.title ?? assessmentKindLabel(kind)}
+                          </p>
+                          <p className="text-caption text-muted">
+                            {assessmentKindLabel(kind)} · {entry ? `${entry.assessment.questions.length} soal` : "Belum dibuat"}
+                          </p>
+                        </div>
+                        {entry && <StatusBadge status={entry.assessment.status} />}
+                      </div>
+                      <div className="flex items-center justify-end gap-3 border-t border-border pt-2">
+                        {entry ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenAssessmentMsgId(entry.messageId);
+                              setOpenAssessmentKind(kind);
+                              setActiveTab("assessment");
+                            }}
+                            className="inline-flex items-center gap-1 text-caption font-semibold text-ink hover:text-primary"
+                          >
+                            <Eye size={14} strokeWidth={1.75} aria-hidden="true" />
+                            {entry.assessment.status === "approved" ? "Lihat" : "Periksa & Setujui"}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateAssessment(kind)}
+                          disabled={thinking || isUploadingFile}
+                          className="text-caption font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {entry ? "Buat ulang" : `Buat ${assessmentKindLabel(kind)}`}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+
                 <Button
                   variant="primary"
                   full
@@ -1644,12 +1942,73 @@ export function MaterialChatbot({
                   Buat Mindmap
                 </Button>
               </div>
+            ) : activeTab === "assessment" ? (
+              activeAssessmentEntry ? (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <div role="tablist" aria-label="Soal asesmen" className="flex shrink-0 gap-2 border-b border-border bg-bg px-4 py-2.5">
+                    {assessmentSlots.map(({ kind, entry }) => {
+                      const selected = (openAssessmentKind ?? activeAssessmentEntry.assessments[0].kind) === kind;
+                      return (
+                        <button
+                          key={kind}
+                          type="button"
+                          role="tab"
+                          aria-selected={selected}
+                          disabled={!entry && (thinking || isUploadingFile)}
+                          onClick={() => {
+                            if (!entry) return handleGenerateAssessment(kind);
+                            setOpenAssessmentMsgId(entry.messageId);
+                            setOpenAssessmentKind(kind);
+                          }}
+                          className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3.5 py-1.5 text-body font-semibold transition-colors disabled:opacity-60 ${
+                            selected ? "border-primary bg-surface text-primary" : "border-border bg-bg text-muted hover:border-primary/50 hover:text-ink"
+                          }`}
+                        >
+                          {assessmentKindLabel(kind)}
+                          {entry ? <StatusBadge status={entry.assessment.status} /> : <span className="text-caption font-normal">+ Buat</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <AssessmentBoard
+                    key={`${activeAssessmentEntry.id}-${openAssessmentKind ?? ""}`}
+                    assessments={activeAssessmentEntry.assessments}
+                    kind={openAssessmentKind ?? activeAssessmentEntry.assessments[0].kind}
+                    onSave={chatId && !thinking ? saveAssessments : undefined}
+                  />
+                </div>
+              ) : (
+                <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+                  <span className="flex size-12 items-center justify-center rounded-full bg-primary-tint text-primary">
+                    <ClipboardList size={24} strokeWidth={1.75} aria-hidden="true" />
+                  </span>
+                  <div className="max-w-xs">
+                    <p className="text-h3 font-semibold text-ink">
+                      {thinking ? "Sedang menyusun soal…" : "Belum ada Pre-Test / Post-Test"}
+                    </p>
+                    <p className="mt-1 text-caption text-muted">
+                      {thinking
+                        ? "Harap tunggu, AI sedang menyusun 10 soal dari seluruh materi Anda."
+                        : "Buat 10 soal pilihan ganda dari materi, lalu edit sebelum dipakai."}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button variant="primary" onClick={() => handleGenerateAssessment("pretest")} loading={thinking} disabled={thinking || isUploadingFile}>
+                      Buat Pre-Test
+                    </Button>
+                    <Button variant="secondary" onClick={() => handleGenerateAssessment("posttest")} disabled={thinking || isUploadingFile}>
+                      Buat Post-Test
+                    </Button>
+                  </div>
+                </div>
+              )
             ) : activeMindmap ? (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <MindmapBoard
                   mindmap={activeMindmap}
                   fillHeight
                   onAskNodePrompt={(promptText) => void submitMessage(promptText)}
+                  onSave={chatId && activeMindmapMsgId && !thinking ? saveMindmap : undefined}
                 />
               </div>
             ) : (

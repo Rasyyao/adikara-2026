@@ -61,7 +61,7 @@ export const schemas = {
   },
   SessionView: {
     type: "object",
-    required: ["id", "class_id", "join_code", "status", "locked", "started_at", "ended_at", "expires_at", "created_at"],
+    required: ["id", "class_id", "join_code", "status", "locked", "started_at", "ended_at", "expires_at", "created_at", "chat_id"],
     properties: {
       id: { type: "string", format: "uuid" },
       class_id: { type: "string", format: "uuid" },
@@ -72,7 +72,13 @@ export const schemas = {
       ended_at: { type: "string", format: "date-time", nullable: true },
       expires_at: { type: "string", format: "date-time", description: "The session closes by itself at this time." },
       created_at: { type: "string", format: "date-time" },
+      chat_id: { type: "string", format: "uuid", nullable: true, description: "The prepared material (chat) assigned to this session, if any." },
     },
+  },
+  SessionMaterial: {
+    type: "object",
+    required: ["id", "title"],
+    properties: { id: { type: "string", format: "uuid" }, title: { type: "string", example: "Struktur data: array" } },
   },
   LiveSession: {
     type: "object",
@@ -114,9 +120,10 @@ export const schemas = {
   },
   SessionDetail: {
     type: "object",
-    required: ["session", "participants"],
+    required: ["session", "material", "participants"],
     properties: {
       session: { $ref: "#/components/schemas/SessionView" },
+      material: { allOf: [{ $ref: "#/components/schemas/SessionMaterial" }], nullable: true, description: "The prepared material assigned to the session, or `null`." },
       participants: { type: "array", items: { $ref: "#/components/schemas/ParticipantView" } },
     },
   },
@@ -184,7 +191,29 @@ export const schemas = {
     required: ["class_code"],
     properties: {
       class_code: { type: "string", pattern: "^[A-Z0-9_-]{3,32}$", description: "The class code of one of the teacher's classes. Case-insensitive.", example: "KELAS7A" },
+      chat_id: { type: "string", format: "uuid", nullable: true, description: "Optional: a material (chat) the teacher already prepared." },
     },
+  },
+  BoardScene: {
+    type: "object",
+    required: ["elements"],
+    properties: {
+      elements: { type: "array", maxItems: 5000, items: { type: "object", required: ["id", "type"], additionalProperties: true }, description: "Excalidraw elements." },
+      appState: { type: "object", properties: { viewBackgroundColor: { type: "string", example: "#ffffff" } } },
+    },
+  },
+  BoardResponse: {
+    type: "object",
+    required: ["board", "updated_at"],
+    properties: {
+      board: { allOf: [{ $ref: "#/components/schemas/BoardScene" }], nullable: true },
+      updated_at: { type: "string", format: "date-time", nullable: true },
+    },
+  },
+  AssignMaterialRequest: {
+    type: "object",
+    required: ["chat_id"],
+    properties: { chat_id: { type: "string", format: "uuid", nullable: true, description: "The material to use in this session; `null` removes it." } },
   },
   JoinSessionRequest: {
     type: "object",

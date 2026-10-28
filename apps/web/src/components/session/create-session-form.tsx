@@ -4,15 +4,16 @@ import { useActionState, useEffect, useId, useState } from "react";
 import { createSessionAction, type FormState } from "@/app/actions/sessions";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import type { ClassView } from "@/lib/api/types";
+import type { ChatView, ClassView } from "@/lib/api/types";
 
 const initial: FormState = {};
 
-export function CreateSessionForm({ classes }: { classes: ClassView[] }) {
+export function CreateSessionForm({ classes, materials = [] }: { classes: ClassView[]; materials?: ChatView[] }) {
   const [state, formAction, pending] = useActionState(createSessionAction, initial);
   const [classCode, setClassCode] = useState(classes.length === 1 ? classes[0].class_code : "");
   const toast = useToast();
   const id = useId();
+  const materialId = `${id}-material`;
   const errorId = `${id}-error`;
   const error = state.fieldErrors?.classCode;
 
@@ -63,6 +64,30 @@ export function CreateSessionForm({ classes }: { classes: ClassView[] }) {
             {error}
           </p>
         )}
+      </div>
+
+      <div>
+        <label htmlFor={materialId} className="mb-1 block text-small font-semibold">
+          Materi untuk sesi ini <span className="font-normal text-muted">(opsional)</span>
+        </label>
+        <select
+          id={materialId}
+          name="chat_id"
+          defaultValue=""
+          className="block min-h-12 w-full rounded-md border border-border bg-surface px-4 text-body text-ink"
+        >
+          <option value="">Tanpa materi</option>
+          {materials.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.title}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-caption text-muted">
+          {materials.length === 0
+            ? "Belum ada materi. Siapkan dulu di menu Materi, lalu pasang ke sesi."
+            : "Materi yang sudah Anda siapkan, jadi tinggal dibuka saat kelas berjalan. Bisa diganti nanti."}
+        </p>
       </div>
 
       <Button type="submit" loading={pending}>

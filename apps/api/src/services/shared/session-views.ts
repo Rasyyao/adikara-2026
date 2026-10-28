@@ -13,6 +13,14 @@ export interface SessionView {
   ended_at: string | null;
   expires_at: string;
   created_at: string;
+  /** The material prepared for this class; see `SessionDetail.material`. */
+  chat_id: string | null;
+}
+
+/** The prepared material (chat workspace) assigned to a session. */
+export interface SessionMaterialView {
+  id: string;
+  title: string;
 }
 
 /** What a student sees of a session: no PIN, no list of classmates. */
@@ -36,6 +44,7 @@ export interface ParticipantView {
 
 export interface SessionDetail {
   session: SessionView;
+  material: SessionMaterialView | null;
   participants: ParticipantView[];
 }
 
@@ -55,6 +64,7 @@ export function toSessionView(s: SessionRecord): SessionView {
     ended_at: iso(s.endedAt),
     expires_at: s.expiresAt.toISOString(),
     created_at: s.createdAt.toISOString(),
+    chat_id: s.chatId,
   };
 }
 

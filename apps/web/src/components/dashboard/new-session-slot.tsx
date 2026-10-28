@@ -1,13 +1,16 @@
 import { Plus } from "lucide-react";
 import { NewSessionDialog } from "@/components/dashboard/new-session-dialog";
-import { classesApi } from "@/lib/api/endpoints";
+import { classesApi, teacherChatsApi } from "@/lib/api/endpoints";
 import { requireViewer } from "@/lib/auth/dal";
 
-/** Loads the teacher's classes on the server, then hands them to the client dialog. */
+/** Loads the teacher's classes and prepared materials on the server, then hands them to the client dialog. */
 export async function NewSessionSlot() {
   const { token } = await requireViewer("staff");
-  const { items } = await classesApi.list(token);
-  return <NewSessionDialog classes={items} />;
+  const [{ items }, chats] = await Promise.all([
+    classesApi.list(token),
+    teacherChatsApi.list(token).catch(() => ({ items: [] })), // the materials are optional: a failure must not block starting a session
+  ]);
+  return <NewSessionDialog classes={items} materials={chats.items} />;
 }
 
 export function NewSessionFallback() {

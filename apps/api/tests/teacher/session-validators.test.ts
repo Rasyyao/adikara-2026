@@ -15,7 +15,7 @@ function fieldsOf(fn: () => unknown): Record<string, string> {
 
 describe("parseCreateSession", () => {
   it("normalizes the class code to upper case", () => {
-    expect(parseCreateSession({ class_code: "  kelas7a " })).toEqual({ classCode: "KELAS7A" });
+    expect(parseCreateSession({ class_code: "  kelas7a " })).toEqual({ classCode: "KELAS7A", chatId: null });
   });
   it.each([undefined, "", "ab", "has space", "x".repeat(33), 7, null, ["KELAS7A"]])("rejects class_code %j", (value) => {
     expect(fieldsOf(() => parseCreateSession({ class_code: value }))).toHaveProperty("class_code");

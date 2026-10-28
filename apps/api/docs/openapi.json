@@ -2537,7 +2537,7 @@
           "Teacher · sessions"
         ],
         "summary": "Start a live session",
-        "description": "Creates a session for one of the teacher's classes and returns its 6-digit PIN (`session.join_code`). A class can have only one live session at a time. The session closes by itself after its time limit.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "description": "Creates a session for one of the teacher's classes and returns its 6-digit PIN (`session.join_code`). Optionally pass `chat_id`, a material the teacher already prepared, so it is ready when the class starts. A class can have only one live session at a time. The session closes by itself after its time limit.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
         "operationId": "post_sessions",
         "requestBody": {
           "required": true,
@@ -2622,7 +2622,7 @@
             }
           },
           "404": {
-            "description": "No such class, or it belongs to another teacher.",
+            "description": "No such class, or it belongs to another teacher (`class_not_found`); or the material is not the teacher's (`material_not_found`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2772,6 +2772,446 @@
                   "error": {
                     "code": "session_not_found",
                     "message": "Session not found"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/sessions/{id}/board": {
+      "get": {
+        "tags": [
+          "Teacher · sessions"
+        ],
+        "summary": "The session's whiteboard",
+        "description": "The saved drawing (an Excalidraw scene), or `board: null` when nothing was drawn yet. Also works after the session ended.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "get_sessions_id_board",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The whiteboard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found, or it belongs to another teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "session_not_found",
+                    "message": "Session not found"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      },
+      "put": {
+        "tags": [
+          "Teacher · sessions"
+        ],
+        "summary": "Save the session's whiteboard",
+        "description": "Replaces the drawing with the scene sent (the latest save wins). The body may be up to 2 MB. Refused once the session has ended.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "put_sessions_id_board",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoardScene"
+              },
+              "example": {
+                "elements": [],
+                "appState": {
+                  "viewBackgroundColor": "#ffffff"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "updated_at"
+                  ],
+                  "properties": {
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found, or it belongs to another teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "session_not_found",
+                    "message": "Session not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session has already ended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "session_ended",
+                    "message": "The session has ended"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/sessions/{id}/material": {
+      "put": {
+        "tags": [
+          "Teacher · sessions"
+        ],
+        "summary": "Assign a prepared material to the session",
+        "description": "Links one of the teacher's chats (its files, mindmap and approved tests) to the session, so the teacher only has to open it during class. Send `chat_id: null` to remove it. Works while the session is LOBBY or ACTIVE.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "put_sessions_id_material",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignMaterialRequest"
+              },
+              "example": {
+                "chat_id": "3f2b8a52-7c1e-4a8e-9a3a-0d5c4d2a9f11"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The session with its material",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such chat, or it belongs to another teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "material_not_found",
+                    "message": "Material not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session has already ended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "session_ended",
+                    "message": "The session has ended"
                   }
                 }
               }
@@ -3811,6 +4251,391 @@
         },
         "x-access": "staff",
         "x-role": "teacher"
+      },
+      "delete": {
+        "tags": [
+          "Teacher · chats"
+        ],
+        "summary": "Delete a chat",
+        "description": "Deletes the chat with its messages, and the uploaded files no other chat uses (also from storage). Class sessions that used the chat are kept.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "delete_chats_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such chat, or it belongs to another teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "chat_not_found",
+                    "message": "Chat not found"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/chats/{id}/messages/{messageId}": {
+      "patch": {
+        "tags": [
+          "Teacher · chats"
+        ],
+        "summary": "Edit an AI reply",
+        "description": "Replaces the content of an assistant message, for example after the teacher edited the mindmap inside it. Messages of the teacher cannot be edited.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "patch_chats_id_messages_messageId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "content": "```mindmap\n{}\n```"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The edited message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assistant message in this chat.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "message_not_found",
+                    "message": "Message not found"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/chats/{id}/stop": {
+      "post": {
+        "tags": [
+          "Teacher · chats"
+        ],
+        "summary": "Stop the AI reply",
+        "description": "Cancels the reply that is being written. Nothing is saved for it, so `reply_pending` turns false. Does nothing when no reply is pending.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "post_chats_id_stop",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Stopped (or nothing was pending)"
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such chat, or it belongs to another teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "chat_not_found",
+                    "message": "Chat not found"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
       }
     },
     "/chats/{id}/messages": {
@@ -4113,6 +4938,411 @@
                   "error": {
                     "code": "storage_unavailable",
                     "message": "File storage is not configured"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/chats/{id}/materials/{materialId}": {
+      "get": {
+        "tags": [
+          "Teacher · chats"
+        ],
+        "summary": "A material with its extracted text",
+        "description": "The text the worker read from the file; `null` until the file has been extracted.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "get_chats_id_materials_materialId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "materialId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The material and its text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such material in this chat.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "material_not_found",
+                    "message": "Material not found"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/chats/{id}/materials/{materialId}/file": {
+      "get": {
+        "tags": [
+          "Teacher · chats"
+        ],
+        "summary": "The original file of a material",
+        "description": "The uploaded PDF/DOCX/PPTX itself, so the teacher can view or download it.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "get_chats_id_materials_materialId_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "materialId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The material or its stored file does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "file_not_found",
+                    "message": "The file is no longer in storage"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "File storage is not configured on this server.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "storage_unavailable",
+                    "message": "File storage is not configured"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/chats/{id}/events": {
+      "get": {
+        "tags": [
+          "Teacher · chats"
+        ],
+        "summary": "Live chat & material updates (Server-Sent Events)",
+        "description": "A long-lived `text/event-stream` that pushes `snapshot` on connect and `update` whenever the Python worker finishes extracting a material or writing an AI reply (`NOTIFY chat_events`).\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "get_chats_id_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The chat event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such chat, or it belongs to another teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "chat_not_found",
+                    "message": "Chat not found"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
                   }
                 }
               }
@@ -4714,7 +5944,8 @@
           "started_at",
           "ended_at",
           "expires_at",
-          "created_at"
+          "created_at",
+          "chat_id"
         ],
         "properties": {
           "id": {
@@ -4761,6 +5992,29 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "chat_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The prepared material (chat) assigned to this session, if any."
+          }
+        }
+      },
+      "SessionMaterial": {
+        "type": "object",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "example": "Struktur data: array"
           }
         }
       },
@@ -4887,11 +6141,21 @@
         "type": "object",
         "required": [
           "session",
+          "material",
           "participants"
         ],
         "properties": {
           "session": {
             "$ref": "#/components/schemas/SessionView"
+          },
+          "material": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionMaterial"
+              }
+            ],
+            "nullable": true,
+            "description": "The prepared material assigned to the session, or `null`."
           },
           "participants": {
             "type": "array",
@@ -5052,6 +6316,78 @@
             "pattern": "^[A-Z0-9_-]{3,32}$",
             "description": "The class code of one of the teacher's classes. Case-insensitive.",
             "example": "KELAS7A"
+          },
+          "chat_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Optional: a material (chat) the teacher already prepared."
+          }
+        }
+      },
+      "BoardScene": {
+        "type": "object",
+        "required": [
+          "elements"
+        ],
+        "properties": {
+          "elements": {
+            "type": "array",
+            "maxItems": 5000,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "type"
+              ],
+              "additionalProperties": true
+            },
+            "description": "Excalidraw elements."
+          },
+          "appState": {
+            "type": "object",
+            "properties": {
+              "viewBackgroundColor": {
+                "type": "string",
+                "example": "#ffffff"
+              }
+            }
+          }
+        }
+      },
+      "BoardResponse": {
+        "type": "object",
+        "required": [
+          "board",
+          "updated_at"
+        ],
+        "properties": {
+          "board": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BoardScene"
+              }
+            ],
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "AssignMaterialRequest": {
+        "type": "object",
+        "required": [
+          "chat_id"
+        ],
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The material to use in this session; `null` removes it."
           }
         }
       },

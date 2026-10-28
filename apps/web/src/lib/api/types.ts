@@ -40,6 +40,25 @@ export interface SessionView {
   ended_at: string | null;
   expires_at: string;
   created_at: string;
+  /** The prepared material (chat) assigned to the session, if any. */
+  chat_id: string | null;
+}
+
+/** A whiteboard scene (Excalidraw elements plus the background colour). */
+export interface BoardScene {
+  elements: Record<string, unknown>[];
+  appState: { viewBackgroundColor?: string };
+}
+
+export interface BoardResponse {
+  board: BoardScene | null;
+  updated_at: string | null;
+}
+
+/** The prepared material assigned to a session. */
+export interface SessionMaterial {
+  id: string;
+  title: string;
 }
 
 /** One row of `GET /sessions?status=live`. */
@@ -69,6 +88,7 @@ export interface ParticipantView {
 
 export interface SessionDetail {
   session: SessionView;
+  material: SessionMaterial | null;
   participants: ParticipantView[];
 }
 

@@ -19,6 +19,8 @@ export const DEFAULT_CHAT_TITLE = "Percakapan baru";
 export interface TeacherChatService {
   create(auth: AuthContext, input: { title: string | null }): Promise<{ chat: ChatView }>;
   list(auth: AuthContext): Promise<{ items: ChatView[] }>;
+  /** The teacher edits an AI reply (for example the mindmap in it). Only assistant messages can be edited. */
+  editMessage(auth: AuthContext, chatId: string, messageId: string, content: string): Promise<{ message: MessageView }>;
   /** Stops the AI reply that is being written for this chat; the teacher's message stays. */
   stopReply(auth: AuthContext, chatId: string): Promise<void>;
   /** Deletes a chat, its messages and the files only it used. */
@@ -60,6 +62,13 @@ export function createTeacherChatService(repository: TeacherChatRepository, stor
       assertStaff(auth);
       const rows = await repository.list(auth.role === "ADMIN" ? null : auth.userId);
       return { items: rows.map(toChatView) };
+    },
+
+    async editMessage(auth, chatId, messageId, content) {
+      const chat = await ownChat(auth, chatId);
+      const row = await repository.updateAssistantContent(chat.id, messageId, content);
+      if (!row) throw new AppError(404, "message_not_found", "Message not found");
+      return { message: toMessageView(row) };
     },
 
     async stopReply(auth, chatId) {

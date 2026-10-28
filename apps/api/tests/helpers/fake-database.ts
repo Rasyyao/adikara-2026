@@ -4,6 +4,7 @@ import type { Repositories } from "../../src/repositories/index.js";
 import type { Role } from "../../src/types/auth.types.js";
 import type { ClassRow } from "../../src/types/shared/class.types.js";
 import type { ParticipantRecord, SessionRecord } from "../../src/types/shared/session.types.js";
+import type { BoardRecord } from "../../src/types/teacher/session.types.js";
 import type { ChatMaterialRow, ChatMessageRow, ChatRow, NewMaterial } from "../../src/types/teacher/chat.types.js";
 
 export const PASSWORDS = {
@@ -143,6 +144,7 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
   const studentsWithRecords = new Set<string>();
   const teachersWithData = new Set<string>();
   const chats = new Map<string, ChatRow>();
+  const boards = new Map<string, BoardRecord>();
   const chatMessages: ChatMessageRow[] = [];
   const materials: FakeDatabase["materials"] = new Map();
   const jobs: FakeDatabase["jobs"] = [];
@@ -366,6 +368,12 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
           if (!m || m.chatId !== chatId) return null;
           return { id: m.id, title: m.title, fileType: m.fileType, status: m.status, error: m.error, filePath: m.filePath, extractedText: null };
         },
+        async updateAssistantContent(chatId, messageId, content) {
+          const m = chatMessages.find((x) => x.id === messageId && x.chatId === chatId && x.role === "ASSISTANT");
+          if (!m) return null;
+          m.content = content;
+          return m;
+        },
         async cancelReply(chatId) {
           const before = jobs.length;
           for (let i = jobs.length - 1; i >= 0; i--) {
@@ -408,6 +416,14 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
             .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
             .map((session) => ({ session, className: classesById.get(session.classId)?.name ?? "" }));
         },
+        async findBoard(sessionId) {
+          return boards.get(sessionId) ?? null;
+        },
+        async saveBoard(sessionId, scene) {
+          const record = { scene, updatedAt: new Date() };
+          boards.set(sessionId, record);
+          return record;
+        },
         async createSession(data) {
           if ([...sessions.values()].some((s) => s.joinCode === data.joinCode)) return null;
           const record: SessionRecord = {
@@ -421,6 +437,7 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
             endedAt: null,
             expiresAt: data.expiresAt,
             createdAt: new Date(),
+            chatId: data.chatId ?? null,
           };
           sessions.set(record.id, record);
           return record;
@@ -467,6 +484,10 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
       sessions: {
         async findSessionById(id) {
           return sessions.get(id) ?? null;
+        },
+        async findChatSummary(chatId) {
+          const chat = chats.get(chatId);
+          return chat ? { id: chat.id, teacherId: chat.teacherId, title: chat.title } : null;
         },
         async updateSession(id, patch) {
           const current = sessions.get(id);

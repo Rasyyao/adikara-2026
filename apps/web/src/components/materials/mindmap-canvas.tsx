@@ -3,269 +3,63 @@
 import {
   ChevronDown,
   ChevronRight,
+  Loader2,
   Maximize2,
   Minimize2,
   Network,
+  Pencil,
+  Plus,
   RotateCcw,
+  Save,
+  Trash2,
+  Undo2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Circle, Group, Layer, Rect, Shape, Stage, Text } from "react-konva";
 import type Konva from "konva";
+import {
+  buildChildrenMap,
+  cubicBezierPoint,
+  getNodePalette,
+  layoutMindmap,
+  NODE_PADDING_X,
+  NODE_PADDING_Y,
+  type AnimatedNodeState,
+  type LayoutNode,
+  type MindmapNodeItem,
+  type MindmapPayload,
+} from "./mindmap-layout";
+import { defaultNodePrompt, isGeneratedPrompt } from "./mindmap-parse";
 
-export interface MindmapNodeItem {
-  id: string;
-  parent_id: string | null;
-  label: string;
-  text: string;
-  source?: string | null;
-}
+export { extractMindmapFromContent, replaceMindmapInContent } from "./mindmap-parse";
 
-export interface MindmapPayload {
-  title: string;
-  nodes: MindmapNodeItem[];
-}
-
-interface LayoutNode extends MindmapNodeItem {
-  depth: number;
-  branchIndex: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  childCount: number;
-  isCollapsed: boolean;
-}
-
-interface AnimatedNodeState {
-  x: number;
-  y: number;
-  opacity: number;
-  scale: number;
-}
-
-const ROOT_PALETTE = {
-  bg: "#1F1B2E",
-  selectedBg: "#3B0764",
-  text: "#FFFFFF",
-  badgeBg: "#6D28D9",
-  line: "#6D28D9",
-};
-
-const BRANCH_PALETTES = [
-  // Royal Violet (--primary #6d28d9)
-  { l1: "#6D28D9", l2: "#7C3AED", selected: "#5B21B6", badge: "#4C1D95", line: "#7C3AED" },
-  // Deep Indigo
-  { l1: "#4338CA", l2: "#4F46E5", selected: "#3730A3", badge: "#312E81", line: "#4F46E5" },
-  // Orchid Amethyst
-  { l1: "#9333EA", l2: "#A855F7", selected: "#7E22CE", badge: "#581C87", line: "#9333EA" },
-  // Teal Emerald (--success harmony)
-  { l1: "#0F766E", l2: "#0D9488", selected: "#115E59", badge: "#134E4A", line: "#0D9488" },
-  // Berry Plum
-  { l1: "#A21CAF", l2: "#C026D3", selected: "#86198F", badge: "#701A75", line: "#C026D3" },
-  // Warm Amber (--warning #b45309)
-  { l1: "#B45309", l2: "#D97706", selected: "#92400E", badge: "#78350F", line: "#D97706" },
-];
-
-function getNodePalette(depth: number, branchIndex: number) {
-  if (depth === 0) return ROOT_PALETTE;
-  const branch = BRANCH_PALETTES[Math.abs(branchIndex) % BRANCH_PALETTES.length];
-  return {
-    bg: depth === 1 ? branch.l1 : branch.l2,
-    selectedBg: branch.selected,
-    text: "#FFFFFF",
-    badgeBg: branch.badge,
-    line: branch.line,
-  };
-}
-
-const HORIZONTAL_GAP = 104;
-const VERTICAL_GAP = 22;
-const NODE_PADDING_X = 16;
-const NODE_PADDING_Y = 12;
-
-function measureNodeBox(label: string, depth: number): { width: number; height: number } {
-  const maxWidth = depth === 0 ? 235 : depth === 1 ? 215 : 225;
-  const minWidth = depth === 0 ? 175 : 148;
-  const charWidth = depth === 0 ? 8.2 : 7.4;
-  const estimatedSingleLine = Math.ceil(label.length * charWidth) + NODE_PADDING_X * 2 + 24;
-  const width = Math.max(minWidth, Math.min(maxWidth, estimatedSingleLine));
-  const innerTextWidth = width - NODE_PADDING_X * 2 - 18;
-  const lines = Math.max(1, Math.ceil((label.length * charWidth) / Math.max(80, innerTextWidth)));
-  const lineHeight = depth === 0 ? 20 : 18;
-  const height = Math.max(46, lines * lineHeight + NODE_PADDING_Y * 2);
-  return { width, height };
-}
-
-function cubicBezierPoint(
-  t: number,
-  p0x: number,
-  p0y: number,
-  p1x: number,
-  p1y: number,
-  p2x: number,
-  p2y: number,
-  p3x: number,
-  p3y: number,
-): { x: number; y: number } {
-  const u = 1 - t;
-  const tt = t * t;
-  const uu = u * u;
-  const uuu = uu * u;
-  const ttt = tt * t;
-  return {
-    x: uuu * p0x + 3 * uu * t * p1x + 3 * u * tt * p2x + ttt * p3x,
-    y: uuu * p0y + 3 * uu * t * p1y + 3 * u * tt * p2y + ttt * p3y,
-  };
-}
-
-/**
- * Parses either a JSON mindmap payload (`{ title, nodes }`) OR an ASCII/markdown tree
- * into a normalized `MindmapPayload`. Returns `null` if the content is not a mindmap.
- */
-export function extractMindmapFromContent(content: string): {
-  mindmap: MindmapPayload;
-  introText: string;
-  outroText: string;
-} | null {
-  const codeBlockRegex = /```(?:mindmap|json)\s*([\s\S]*?)```/i;
-  const match = codeBlockRegex.exec(content);
-  if (match) {
-    try {
-      const parsed = JSON.parse(match[1].trim());
-      if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length > 0) {
-        const before = content.slice(0, match.index).trim();
-        const after = content.slice(match.index + match[0].length).trim();
-        return {
-          mindmap: normalizeMindmapObject(parsed),
-          introText: before,
-          outroText: after,
-        };
-      }
-    } catch {
-      // fall through
-    }
-  }
-
-  const trimmed = content.trim();
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length > 0) {
-        return {
-          mindmap: normalizeMindmapObject(parsed),
-          introText: "",
-          outroText: "",
-        };
-      }
-    } catch {
-      // fall through
-    }
-  }
-
-  if (/[├└]──/.test(content)) {
-    const parsedAscii = parseAsciiTreeMindmap(content);
-    if (parsedAscii) return parsedAscii;
-  }
-
-  return null;
-}
-
-function normalizeMindmapObject(raw: Record<string, unknown>): MindmapPayload {
-  const title = typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : "Mindmap Materi";
-  const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];
-  const nodes: MindmapNodeItem[] = [];
-
-  rawNodes.forEach((item, idx) => {
-    if (!item || typeof item !== "object") return;
-    const obj = item as Record<string, unknown>;
-    const dataObj = obj.data && typeof obj.data === "object" ? (obj.data as Record<string, unknown>) : {};
-    const id = String(obj.id ?? `n${idx + 1}`).trim();
-    const rawParent = obj.parent_id ?? obj.parentId ?? null;
-    const parent_id = rawParent ? String(rawParent).trim() : null;
-    const label = String(obj.label ?? dataObj.label ?? `Konsep ${idx + 1}`).trim();
-    const text = String(
-      obj.text ??
-        obj.prompt ??
-        dataObj.text ??
-        dataObj.prompt ??
-        `Tolong jelaskan secara mendalam mengenai "${label}" berdasarkan materi ini.`,
-    ).trim();
-    const source = obj.source || dataObj.source ? String(obj.source ?? dataObj.source).trim() : null;
-    nodes.push({ id, parent_id, label, text, source });
-  });
-
-  return { title, nodes };
-}
-
-function parseAsciiTreeMindmap(content: string): {
-  mindmap: MindmapPayload;
-  introText: string;
-  outroText: string;
-} | null {
-  const titleMatch = /^#{1,4}\s*(?:🧠\s*)?(.+)$/m.exec(content);
-  const title = titleMatch
-    ? titleMatch[1].replace(/\*\*+/g, "").replace(/^MINDMAP MATERI:\s*/i, "").trim()
-    : "Mindmap Materi";
-
-  const lines = content.split("\n");
-  const treeLines = lines.filter((line) => /[├└]──/.test(line));
-  if (treeLines.length < 2) return null;
-
-  const nodes: MindmapNodeItem[] = [
-    {
-      id: "root",
-      parent_id: null,
-      label: title,
-      text: `Tolong jelaskan gambaran umum secara menyeluruh mengenai ${title}.`,
-      source: "Materi utama",
-    },
-  ];
-
-  const parentStack: Array<{ indent: number; id: string; label: string }> = [{ indent: -1, id: "root", label: title }];
-
-  treeLines.forEach((line, idx) => {
-    const branchMatch = /^([\s│]*)[├└]──\s*(.+)$/.exec(line);
-    if (!branchMatch) return;
-    const indent = branchMatch[1].length;
-    const cleanLabel = branchMatch[2].replace(/\*\*+/g, "").trim();
-    if (!cleanLabel) return;
-
-    while (parentStack.length > 1 && parentStack[parentStack.length - 1].indent >= indent) {
-      parentStack.pop();
-    }
-
-    const parent = parentStack[parentStack.length - 1];
-    const id = `ascii-${idx + 1}`;
-    nodes.push({
-      id,
-      parent_id: parent.id,
-      label: cleanLabel,
-      text: `Tolong jelaskan lebih detail mengenai "${cleanLabel}" pada bagian "${parent.label}" beserta contohnya.`,
-      source: null,
-    });
-    parentStack.push({ indent, id, label: cleanLabel });
-  });
-
-  if (nodes.length <= 1) return null;
-
-  return {
-    mindmap: { title, nodes },
-    introText: "",
-    outroText: "",
-  };
-}
+export type { MindmapNodeItem, MindmapPayload } from "./mindmap-layout";
 
 export function MindmapBoard({
-  mindmap,
+  mindmap: propMindmap,
   onAskNodePrompt,
+  onSave,
   fillHeight = false,
 }: {
   mindmap: MindmapPayload;
   onAskNodePrompt?: (promptText: string) => void;
+  /** Makes the board editable. Resolves true when the edited mindmap was stored. */
+  onSave?: (mindmap: MindmapPayload) => Promise<boolean>;
   fillHeight?: boolean;
 }) {
+  const labelInputId = useId();
+  const promptInputId = useId();
+  const labelInputRef = useRef<HTMLInputElement>(null);
+  // the teacher's unsaved edits; the board shows them instead of the mindmap it was given
+  const [edited, setEdited] = useState<MindmapPayload | null>(null);
+  const editedRef = useRef<MindmapPayload | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const propSig = useMemo(() => JSON.stringify(propMindmap), [propMindmap]);
+  const mindmap = edited ?? propMindmap;
+  const isDirty = edited !== null && JSON.stringify(edited) !== propSig;
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
 
@@ -291,13 +85,18 @@ export function MindmapBoard({
     setMounted(true);
   }, []);
 
-  // Reset selection when a new mindmap is loaded
+  // A different mindmap was loaded: reset the view. When it is just what the teacher saved, keep the view as it is.
   useEffect(() => {
-    setSelectedNodeId(mindmap.nodes[0]?.id ?? null);
+    const justSaved = editedRef.current !== null && JSON.stringify(editedRef.current) === propSig;
+    editedRef.current = null;
+    setEdited(null);
+    if (justSaved) return;
+    setSelectedNodeId(propMindmap.nodes[0]?.id ?? null);
     setCollapsedIds(new Set());
     setManualPositions({});
     animatedMapRef.current = {};
-  }, [mindmap]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propSig]);
 
   // Measure container size responsively
   useEffect(() => {
@@ -322,83 +121,11 @@ export function MindmapBoard({
   }, [mounted, isFullscreen, fillHeight]);
 
   // Build parent -> children map
-  const childrenMap = useMemo(() => {
-    const map = new Map<string | null, MindmapNodeItem[]>();
-    const validIds = new Set(mindmap.nodes.map((n) => n.id));
-    for (const node of mindmap.nodes) {
-      const pid = node.parent_id && validIds.has(node.parent_id) ? node.parent_id : null;
-      const list = map.get(pid) ?? [];
-      list.push(node);
-      map.set(pid, list);
-    }
-    return map;
-  }, [mindmap.nodes]);
+  const childrenMap = useMemo(() => buildChildrenMap(mindmap.nodes), [mindmap.nodes]);
 
   // Compute hierarchical tree layout (NotebookLM horizontal left-to-right tree)
   const { layoutNodes, layoutNodeById, activeIds, bounds } = useMemo(() => {
-    const roots = childrenMap.get(null) ?? (mindmap.nodes[0] ? [mindmap.nodes[0]] : []);
-    const computedNodes: LayoutNode[] = [];
-    const nodeById = new Map<string, LayoutNode>();
-
-    const colWidths = new Map<number, number>();
-    const visitMeasure = (node: MindmapNodeItem, depth: number) => {
-      const box = measureNodeBox(node.label, depth);
-      colWidths.set(depth, Math.max(colWidths.get(depth) ?? 0, box.width));
-      if (collapsedIds.has(node.id)) return;
-      const kids = childrenMap.get(node.id) ?? [];
-      for (const kid of kids) visitMeasure(kid, depth + 1);
-    };
-    for (const r of roots) visitMeasure(r, 0);
-
-    const colX = new Map<number, number>();
-    let runningX = 0;
-    for (let d = 0; d <= 10; d++) {
-      colX.set(d, runningX);
-      runningX += (colWidths.get(d) ?? 200) + HORIZONTAL_GAP;
-    }
-
-    let leafCursorY = 0;
-
-    const placeSubtree = (node: MindmapNodeItem, depth: number, branchIndex: number): LayoutNode => {
-      const box = measureNodeBox(node.label, depth);
-      const kids = childrenMap.get(node.id) ?? [];
-      const isCollapsed = collapsedIds.has(node.id);
-      const x = colX.get(depth) ?? depth * (210 + HORIZONTAL_GAP);
-
-      let y = 0;
-      if (kids.length === 0 || isCollapsed) {
-        y = leafCursorY;
-        leafCursorY += box.height + VERTICAL_GAP;
-      } else {
-        const placedKids = kids.map((k, idx) =>
-          placeSubtree(k, depth + 1, depth === 0 ? idx : branchIndex),
-        );
-        const firstKid = placedKids[0];
-        const lastKid = placedKids[placedKids.length - 1];
-        const subtreeCenter = (firstKid.y + lastKid.y + lastKid.height) / 2;
-        y = subtreeCenter - box.height / 2;
-      }
-
-      const manual = manualPositions[node.id];
-      const layoutNode: LayoutNode = {
-        ...node,
-        depth,
-        branchIndex,
-        x: manual ? manual.x : x,
-        y: manual ? manual.y : y,
-        width: box.width,
-        height: box.height,
-        childCount: kids.length,
-        isCollapsed,
-      };
-      computedNodes.push(layoutNode);
-      nodeById.set(node.id, layoutNode);
-      return layoutNode;
-    };
-
-    roots.forEach((r, idx) => {
-      placeSubtree(r, 0, idx);
-    });
+    const { layoutNodes: computedNodes, layoutNodeById: nodeById } = layoutMindmap(mindmap.nodes, collapsedIds, manualPositions);
 
     const activeSet = new Set<string>();
     let cursor = selectedNodeId ? nodeById.get(selectedNodeId) : undefined;
@@ -429,7 +156,7 @@ export function MindmapBoard({
         height: Number.isFinite(maxY - minY) ? Math.max(160, maxY - minY) : 400,
       },
     };
-  }, [childrenMap, collapsedIds, manualPositions, mindmap.nodes, selectedNodeId]);
+  }, [collapsedIds, manualPositions, mindmap.nodes, selectedNodeId]);
 
   // 60fps animation loop: interpolates node positions (expand/collapse/layout) + camera pan/zoom + flowing edge particles
   useEffect(() => {
@@ -517,7 +244,86 @@ export function MindmapBoard({
     if (!mounted) return;
     fitToScreen();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, canvasSize.width, isFullscreen, mindmap]);
+  }, [mounted, canvasSize.width, isFullscreen, propSig]);
+
+  const selectedNode = mindmap.nodes.find((n) => n.id === selectedNodeId) ?? null;
+
+  function applyEdit(updater: (current: MindmapPayload) => MindmapPayload) {
+    const next = updater(mindmap);
+    editedRef.current = next;
+    setEdited(next);
+  }
+
+  function updateNode(id: string, patch: Partial<Pick<MindmapNodeItem, "label" | "text">>) {
+    applyEdit((current) => ({
+      ...current,
+      nodes: current.nodes.map((n) => {
+        if (n.id !== id) return n;
+        const next = { ...n, ...patch };
+        if (patch.label !== undefined && patch.text === undefined && isGeneratedPrompt(n.text, n.label)) {
+          next.text = defaultNodePrompt(patch.label.trim() || "konsep ini");
+        }
+        return next;
+      }),
+    }));
+  }
+
+  function addNode(parentId: string | null) {
+    const id = `n-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    const label = "Konsep baru";
+    applyEdit((current) => ({
+      ...current,
+      nodes: [...current.nodes, { id, parent_id: parentId, label, text: defaultNodePrompt(label), source: null }],
+    }));
+    if (parentId) {
+      setCollapsedIds((prev) => {
+        if (!prev.has(parentId)) return prev;
+        const next = new Set(prev);
+        next.delete(parentId);
+        return next;
+      });
+    }
+    setSelectedNodeId(id);
+    window.setTimeout(() => {
+      labelInputRef.current?.focus();
+      labelInputRef.current?.select();
+    }, 0);
+  }
+
+  function removeNode(id: string) {
+    const target = mindmap.nodes.find((n) => n.id === id);
+    if (!target || target.parent_id === null) return; // the root stays
+    const doomed = new Set<string>([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const n of mindmap.nodes) {
+        if (n.parent_id && doomed.has(n.parent_id) && !doomed.has(n.id)) {
+          doomed.add(n.id);
+          grew = true;
+        }
+      }
+    }
+    applyEdit((current) => ({ ...current, nodes: current.nodes.filter((n) => !doomed.has(n.id)) }));
+    for (const gone of doomed) delete animatedMapRef.current[gone];
+    setSelectedNodeId(target.parent_id);
+  }
+
+  function revertEdits() {
+    editedRef.current = null;
+    setEdited(null);
+    setSelectedNodeId(propMindmap.nodes[0]?.id ?? null);
+  }
+
+  async function saveEdits() {
+    if (!onSave || !edited || saving) return;
+    setSaving(true);
+    try {
+      await onSave({ ...edited, nodes: edited.nodes.map((n) => ({ ...n, label: n.label.trim() || "Konsep", text: n.text.trim() || defaultNodePrompt(n.label.trim() || "konsep ini") })) });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function toggleCollapse(nodeId: string) {
     setCollapsedIds((prev) => {
@@ -605,7 +411,7 @@ export function MindmapBoard({
     <div
       className={
         isFullscreen
-          ? "fixed inset-0 z-50 flex flex-col bg-surface p-4 sm:p-6"
+          ? "fixed inset-0 z-50 flex flex-col bg-surface"
           : fillHeight
             ? "flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface"
             : "flex w-full flex-col overflow-hidden rounded-lg border border-border bg-surface"
@@ -620,12 +426,30 @@ export function MindmapBoard({
           <div className="min-w-0">
             <p className="truncate text-small font-semibold text-ink">{mindmap.title}</p>
             <p className="text-caption text-muted">
-              Geser kanvas · Scroll zoom · Ketuk 2x node untuk jelaskan topik
+              {editMode
+                ? "Mode edit · Pilih node untuk mengubah teks, menambah, atau menghapus cabang"
+                : "Geser kanvas · Scroll zoom · Ketuk 2x node untuk jelaskan topik"}
+              {isDirty && <span className="ml-1.5 font-semibold text-warning">· Belum disimpan</span>}
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          {onSave && (
+            <button
+              type="button"
+              onClick={() => setEditMode((v) => !v)}
+              aria-pressed={editMode}
+              className={`inline-flex h-8 items-center gap-1 rounded-sm border px-2.5 text-caption font-semibold transition-colors ${
+                editMode
+                  ? "border-primary bg-primary text-white"
+                  : "border-border bg-surface text-ink hover:bg-primary-tint hover:text-primary"
+              }`}
+            >
+              <Pencil size={14} strokeWidth={1.75} aria-hidden="true" />
+              <span>{editMode ? "Selesai" : "Edit"}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={expandAll}
@@ -848,11 +672,13 @@ export function MindmapBoard({
                       }}
                       onDblClick={(e) => {
                         e.cancelBubble = true;
+                        if (editMode) return; // while editing, a double tap must not send the node to the AI
                         if (isFullscreen) setIsFullscreen(false);
                         onAskNodePrompt?.(node.text);
                       }}
                       onDblTap={(e) => {
                         e.cancelBubble = true;
+                        if (editMode) return;
                         if (isFullscreen) setIsFullscreen(false);
                         onAskNodePrompt?.(node.text);
                       }}
@@ -922,6 +748,102 @@ export function MindmapBoard({
           </Stage>
         )}
       </div>
+
+      {/* Editor for the selected node */}
+      {onSave && editMode && (
+        <div className="flex max-h-[48%] shrink-0 flex-col gap-2.5 overflow-y-auto border-t border-border bg-surface p-3">
+          {selectedNode ? (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-caption font-semibold uppercase tracking-wide text-muted">Edit node</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => addNode(selectedNode.id)}
+                    className="inline-flex h-8 items-center gap-1 rounded-sm border border-border bg-surface px-2.5 text-caption font-semibold text-ink transition-colors hover:bg-primary-tint hover:text-primary"
+                  >
+                    <Plus size={14} strokeWidth={1.75} aria-hidden="true" />
+                    Tambah cabang
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addNode(selectedNode.parent_id)}
+                    disabled={selectedNode.parent_id === null}
+                    className="inline-flex h-8 items-center gap-1 rounded-sm border border-border bg-surface px-2.5 text-caption font-semibold text-ink transition-colors hover:bg-primary-tint hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Plus size={14} strokeWidth={1.75} aria-hidden="true" />
+                    Tambah sejajar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeNode(selectedNode.id)}
+                    disabled={selectedNode.parent_id === null}
+                    title={selectedNode.parent_id === null ? "Node utama tidak bisa dihapus" : "Hapus node beserta cabangnya"}
+                    className="inline-flex h-8 items-center gap-1 rounded-sm border border-border bg-surface px-2.5 text-caption font-semibold text-danger transition-colors hover:bg-bg disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />
+                    Hapus
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label htmlFor={labelInputId} className="text-caption font-semibold text-ink">
+                  Judul node
+                </label>
+                <input
+                  id={labelInputId}
+                  ref={labelInputRef}
+                  value={selectedNode.label}
+                  maxLength={120}
+                  onChange={(event) => updateNode(selectedNode.id, { label: event.target.value })}
+                  className="min-h-9 rounded-md border border-border bg-bg px-3 text-small text-ink outline-none focus:border-primary"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor={promptInputId} className="text-caption font-semibold text-ink">
+                  Perintah ke AI saat node diketuk 2x
+                </label>
+                <textarea
+                  id={promptInputId}
+                  value={selectedNode.text}
+                  rows={2}
+                  maxLength={500}
+                  onChange={(event) => updateNode(selectedNode.id, { text: event.target.value })}
+                  className="resize-none rounded-md border border-border bg-bg px-3 py-2 text-small text-ink outline-none focus:border-primary"
+                />
+              </div>
+            </>
+          ) : (
+            <p className="text-small text-muted">Pilih sebuah node pada mindmap untuk mengeditnya.</p>
+          )}
+
+          <div className="flex items-center justify-end gap-2 border-t border-border pt-2.5">
+            <button
+              type="button"
+              onClick={revertEdits}
+              disabled={!isDirty || saving}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-caption font-semibold text-ink transition-colors hover:bg-bg disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Undo2 size={14} strokeWidth={1.75} aria-hidden="true" />
+              Urungkan
+            </button>
+            <button
+              type="button"
+              onClick={() => void saveEdits()}
+              disabled={!isDirty || saving}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3.5 text-caption font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? (
+                <Loader2 size={14} strokeWidth={1.75} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Save size={14} strokeWidth={1.75} aria-hidden="true" />
+              )}
+              {saving ? "Menyimpan…" : "Simpan perubahan"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

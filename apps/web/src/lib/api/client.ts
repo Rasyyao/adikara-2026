@@ -6,7 +6,7 @@ const API_PREFIX = "/api/v1";
 const TIMEOUT_MS = 10_000;
 
 interface Options {
-  method?: "GET" | "POST" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   /** The JWT. Only ever handled on the server. */
   token?: string;

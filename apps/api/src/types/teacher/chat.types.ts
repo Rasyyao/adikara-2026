@@ -56,6 +56,8 @@ export interface TeacherChatRepository {
   /** Oldest first. Without `after`: the latest `limit` messages. With `after` (a message id): the ones that came after it, for polling. */
   listMessages(chatId: string, options: { limit: number; after?: string }): Promise<ChatMessageRow[]>;
   listMaterials(chatId: string): Promise<ChatMaterialRow[]>;
+  /** Replaces the content of an assistant message of this chat. Null when there is no such assistant message. */
+  updateAssistantContent(chatId: string, messageId: string, content: string): Promise<ChatMessageRow | null>;
   /** One material of this chat (null when it is not attached to the chat), with its storage key and extracted text. */
   findMaterial(chatId: string, materialId: string): Promise<ChatMaterialFileRow | null>;
   /**

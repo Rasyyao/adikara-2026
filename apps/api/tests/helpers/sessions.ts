@@ -10,6 +10,8 @@ export const SESSION_PATHS = {
   live: "/api/v1/sessions?status=live",
   join: "/api/v1/sessions/join",
   one: (id: string) => `/api/v1/sessions/${id}`,
+  board: (id: string) => `/api/v1/sessions/${id}/board`,
+  material: (id: string) => `/api/v1/sessions/${id}/material`,
   start: (id: string) => `/api/v1/sessions/${id}/start`,
   lock: (id: string) => `/api/v1/sessions/${id}/lock`,
   end: (id: string) => `/api/v1/sessions/${id}/end`,

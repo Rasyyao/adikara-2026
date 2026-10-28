@@ -1,7 +1,7 @@
 import { AppError } from "../../http/errors.js";
 import type { AuthContext } from "../../types/auth.types.js";
 import type { ParticipantRecord, SessionRecord } from "../../types/shared/session.types.js";
-import type { TeacherSessionRepository } from "../../types/teacher/session.types.js";
+import type { BoardScene, TeacherSessionRepository } from "../../types/teacher/session.types.js";
 import type { SessionCore } from "../shared/session-core.js";
 import {
   iso,
@@ -37,10 +37,22 @@ export interface LiveSession {
   joined_count: number;
 }
 
+export interface BoardView {
+  /** The saved whiteboard, or null when nothing was drawn yet. */
+  board: BoardScene | null;
+  updated_at: string | null;
+}
+
 export interface TeacherSessionService {
+  /** The session's whiteboard. Readable while live and after the class ended. */
+  getBoard(auth: AuthContext, sessionId: string): Promise<BoardView>;
+  /** Replaces the whiteboard. Only while the session has not ended. */
+  saveBoard(auth: AuthContext, sessionId: string, scene: BoardScene): Promise<{ updated_at: string }>;
   /** The caller's sessions that have not ended: all of them for an admin. Expired ones are closed and left out. */
   listLiveSessions(auth: AuthContext): Promise<{ items: LiveSession[] }>;
-  createSession(auth: AuthContext, classCode: string): Promise<SessionDetail>;
+  createSession(auth: AuthContext, classCode: string, chatId?: string | null): Promise<SessionDetail>;
+  /** Assigns the prepared material (one of the teacher's chats) to a session that has not ended, or removes it with null. */
+  assignMaterial(auth: AuthContext, sessionId: string, chatId: string | null): Promise<SessionDetail>;
   getSession(auth: AuthContext, sessionId: string): Promise<SessionDetail>;
   startSession(auth: AuthContext, sessionId: string): Promise<{ session: SessionView }>;
   setLocked(auth: AuthContext, sessionId: string, locked: boolean): Promise<{ session: SessionView }>;
@@ -95,6 +107,13 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
     return { session_id: session.id, class_id: session.classId, summary, students: rows };
   }
 
+  /** The material must be a chat of the teacher who owns the class; another teacher's chat reads as not found. */
+  async function ownedChat(teacherId: string, chatId: string) {
+    const chat = await sessions.findChatSummary(chatId);
+    if (!chat || chat.teacherId !== teacherId) throw new AppError(404, "material_not_found", "Material not found");
+    return chat;
+  }
+
   return {
     async listLiveSessions(auth) {
       core.assertStaff(auth);
@@ -111,13 +130,15 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
       return { items };
     },
 
-    async createSession(auth, classCode) {
+    async createSession(auth, classCode, chatId = null) {
       core.assertStaff(auth);
       const classroom = await repository.findClassroomByCode(classCode);
       if (!classroom || (auth.role === "TEACHER" && classroom.teacherId !== auth.userId)) {
         throw new AppError(404, "class_not_found", "Class not found");
       }
       if (classroom.archived) throw new AppError(409, "class_archived", "The class is archived");
+
+      if (chatId) await ownedChat(classroom.teacherId, chatId);
 
       const open = await repository.findOpenSessionByClass(classroom.id);
       if (open) {
@@ -134,10 +155,31 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
           teacherId: classroom.teacherId,
           joinCode: options.generateCode(),
           expiresAt,
+          chatId,
         });
         if (created) return core.detail(created);
       }
       throw new AppError(503, "join_code_unavailable", "Could not generate a free join code, try again");
+    },
+
+    async assignMaterial(auth, sessionId, chatId) {
+      const session = await core.loadManaged(auth, sessionId);
+      if (session.status === "ENDED") throw sessionEnded();
+      if (chatId) await ownedChat(session.teacherId, chatId);
+      return core.detail(await sessions.updateSession(session.id, { chatId }));
+    },
+
+    async getBoard(auth, sessionId) {
+      const session = await core.loadManaged(auth, sessionId);
+      const record = await repository.findBoard(session.id);
+      return { board: record?.scene ?? null, updated_at: iso(record?.updatedAt ?? null) };
+    },
+
+    async saveBoard(auth, sessionId, scene) {
+      const session = await core.loadManaged(auth, sessionId);
+      if (session.status === "ENDED") throw sessionEnded();
+      const saved = await repository.saveBoard(session.id, scene);
+      return { updated_at: saved.updatedAt.toISOString() };
     },
 
     async getSession(auth, sessionId) {

@@ -25,6 +25,7 @@ describe("OpenAPI: chats", () => {
       "/chats/{id}/materials/{materialId}",
       "/chats/{id}/materials/{materialId}/file",
       "/chats/{id}/messages",
+      "/chats/{id}/messages/{messageId}",
       "/chats/{id}/stop",
     ]);
     expect(Object.keys(spec.paths["/chats"]).sort()).toEqual(["get", "post"]);

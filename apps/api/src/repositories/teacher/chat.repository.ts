@@ -80,6 +80,13 @@ export function createTeacherChatRepository(prisma: PrismaClient): TeacherChatRe
       return latest.reverse().map(toMessage); // the latest `limit`, back in reading order
     },
 
+    async updateAssistantContent(chatId, messageId, content) {
+      const { count } = await prisma.chatMessage.updateMany({ where: { id: messageId, chatId, role: "ASSISTANT" }, data: { content } });
+      if (count === 0) return null;
+      const row = await prisma.chatMessage.findUnique({ where: { id: messageId } });
+      return row ? toMessage(row) : null;
+    },
+
     async listMaterials(chatId) {
       const rows = await prisma.chatMaterial.findMany({
         where: { chatId },

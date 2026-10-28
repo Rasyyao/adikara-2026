@@ -29,6 +29,10 @@ export function createSharedSessionRepository(prisma: PrismaClient): SharedSessi
       return prisma.classSession.findUnique({ where: { id } });
     },
 
+    async findChatSummary(chatId) {
+      return prisma.chat.findUnique({ where: { id: chatId }, select: { id: true, teacherId: true, title: true } });
+    },
+
     async updateSession(id, patch) {
       return prisma.classSession.update({ where: { id }, data: patch });
     },

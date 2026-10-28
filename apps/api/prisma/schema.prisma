@@ -165,11 +165,23 @@ model ClassSession {
   participants SessionParticipant[]
   chatId       String?              @map("chat_id") @db.Uuid
   chat         Chat?                @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  board        SessionBoard?
 
   @@index([classId, status])
   @@index([teacherId])
   @@index([chatId])
   @@map("class_sessions")
+}
+
+/// The teacher's whiteboard for a session: an Excalidraw scene (`{ elements, appState }`). Kept apart from the
+/// session row because it can be large and every session read would otherwise carry it.
+model SessionBoard {
+  sessionId String       @id @map("session_id") @db.Uuid
+  scene     Json
+  updatedAt DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  session   ClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("session_boards")
 }
 
 /// Attendance: one row per student per session.

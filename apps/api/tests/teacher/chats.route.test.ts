@@ -121,6 +121,31 @@ describe("teacher · chats (/api/v1/chats)", () => {
     });
   });
 
+  describe("edit an AI reply", () => {
+    it("replaces the content of an assistant message; the teacher's own message cannot be edited", async () => {
+      const { app, db } = await buildTestApp();
+      const id = await newChat(app);
+      const sent = await request(app).post(MESSAGES(id)).set(auth(TEACHER_AUTH)).send({ text: "Buat mindmap" });
+      db.chatMessages.push({ id: UNKNOWN_ID, chatId: id, role: "ASSISTANT", content: "lama", sources: null, createdAt: new Date() });
+
+      const ok = await request(app).patch(`${MESSAGES(id)}/${UNKNOWN_ID}`).set(auth(TEACHER_AUTH)).send({ content: "  baru  " });
+      expect(ok.status).toBe(200);
+      expect(ok.body.message).toMatchObject({ id: UNKNOWN_ID, role: "ASSISTANT", content: "baru" });
+
+      const own = await request(app).patch(`${MESSAGES(id)}/${sent.body.message.id}`).set(auth(TEACHER_AUTH)).send({ content: "x" });
+      expect(own.status).toBe(404);
+    });
+
+    it("validates the content and hides other teachers' chats", async () => {
+      const { app, db } = await buildTestApp();
+      const id = await newChat(app);
+      db.chatMessages.push({ id: UNKNOWN_ID, chatId: id, role: "ASSISTANT", content: "lama", sources: null, createdAt: new Date() });
+      expect((await request(app).patch(`${MESSAGES(id)}/${UNKNOWN_ID}`).set(auth(TEACHER_AUTH)).send({ content: "  " })).status).toBe(400);
+      expect((await request(app).patch(`${MESSAGES(id)}/${UNKNOWN_ID}`).set(auth(OTHER_TEACHER_AUTH)).send({ content: "x" })).status).toBe(404);
+      expect((await request(app).patch(`${MESSAGES(id)}/nope`).set(auth(TEACHER_AUTH)).send({ content: "x" })).status).toBe(400);
+    });
+  });
+
   describe("stop", () => {
     it("cancels the pending reply so reply_pending turns false, and keeps the message", async () => {
       const { app } = await buildTestApp();

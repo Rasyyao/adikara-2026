@@ -15,6 +15,8 @@ function describeChatError(error: unknown): string {
         return "Tidak bisa terhubung ke server API. Periksa koneksi Anda.";
       case "chat_not_found":
         return "Percakapan materi tidak ditemukan.";
+      case "message_not_found":
+        return "Pesan tidak ditemukan atau tidak dapat diubah.";
       case "file_too_large":
         return "Ukuran berkas melebihi batas maksimal 20 MB.";
       case "storage_unavailable":
@@ -119,6 +121,18 @@ export async function stopChatReplyAction(chatId: string): Promise<ActionResult>
   try {
     await teacherChatsApi.stop(token, chatId);
     return { ok: true };
+  } catch (error) {
+    return { ok: false, message: describeChatError(error) };
+  }
+}
+
+export async function editMessageAction(chatId: string, messageId: string, content: string): Promise<ActionResult<{ saved: MessageView }>> {
+  const { token } = await requireViewer("staff");
+  if (!isUuid(chatId) || !isUuid(messageId)) return { ok: false, message: "Pesan tidak valid." };
+
+  try {
+    const result = await teacherChatsApi.editMessage(token, chatId, messageId, content);
+    return { ok: true, saved: result.message };
   } catch (error) {
     return { ok: false, message: describeChatError(error) };
   }

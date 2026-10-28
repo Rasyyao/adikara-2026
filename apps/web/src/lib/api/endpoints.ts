@@ -6,10 +6,13 @@ import type {
   ChatMessagesResponse,
   ChatView,
   ClassView,
+  BoardResponse,
+  BoardScene,
   EndSessionResponse,
   JoinResult,
   LiveSession,
   LoginResult,
+  MessageView,
   PublicUser,
   SendMessageResult,
   SessionDetail,
@@ -33,8 +36,18 @@ export const classesApi = {
 export const teacherSessionsApi = {
   /** The caller's sessions that have not ended (an admin gets every teacher's). */
   listLive: (token: string) => apiFetch<{ items: LiveSession[] }>("/sessions?status=live", { token }),
-  create: (token: string, classCode: string) =>
-    apiFetch<SessionDetail>("/sessions", { method: "POST", token, body: { class_code: classCode } }),
+  create: (token: string, classCode: string, chatId?: string) =>
+    apiFetch<SessionDetail>("/sessions", {
+      method: "POST",
+      token,
+      body: chatId ? { class_code: classCode, chat_id: chatId } : { class_code: classCode },
+    }),
+  board: (token: string, id: string) => apiFetch<BoardResponse>(`/sessions/${id}/board`, { token }),
+  saveBoard: (token: string, id: string, scene: BoardScene) =>
+    apiFetch<{ updated_at: string }>(`/sessions/${id}/board`, { method: "PUT", token, body: scene }),
+  /** Assigns a prepared material to the session; null removes it. */
+  assignMaterial: (token: string, id: string, chatId: string | null) =>
+    apiFetch<SessionDetail>(`/sessions/${id}/material`, { method: "PUT", token, body: { chat_id: chatId } }),
   get: (token: string, id: string) => apiFetch<SessionDetail>(`/sessions/${id}`, { token }),
   start: (token: string, id: string) => apiFetch<{ session: SessionView }>(`/sessions/${id}/start`, { method: "POST", token }),
   setLocked: (token: string, id: string, locked: boolean) =>
@@ -54,6 +67,8 @@ export const teacherChatsApi = {
   create: (token: string, title?: string) =>
     apiFetch<{ chat: ChatView }>("/chats", { method: "POST", token, body: title ? { title } : {} }),
   get: (token: string, id: string) => apiFetch<ChatDetail>(`/chats/${id}`, { token }),
+  editMessage: (token: string, id: string, messageId: string, content: string) =>
+    apiFetch<{ message: MessageView }>(`/chats/${id}/messages/${messageId}`, { method: "PATCH", token, body: { content } }),
   stop: (token: string, id: string) => apiFetch<void>(`/chats/${id}/stop`, { method: "POST", token }),
   remove: (token: string, id: string) => apiFetch<void>(`/chats/${id}`, { method: "DELETE", token }),
   messages: (token: string, id: string, query?: { limit?: number; after?: string }) => {

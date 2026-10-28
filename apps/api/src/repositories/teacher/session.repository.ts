@@ -1,5 +1,5 @@
-import type { PrismaClient } from "../../generated/prisma/client.js";
-import type { TeacherSessionRepository } from "../../types/teacher/session.types.js";
+import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
+import type { BoardScene, TeacherSessionRepository } from "../../types/teacher/session.types.js";
 import { isUniqueViolation } from "../prisma-errors.js";
 
 export function createTeacherSessionRepository(prisma: PrismaClient): TeacherSessionRepository {
@@ -33,6 +33,21 @@ export function createTeacherSessionRepository(prisma: PrismaClient): TeacherSes
         include: { classroom: { select: { name: true } } },
       });
       return rows.map(({ classroom, ...session }) => ({ session, className: classroom.name }));
+    },
+
+    async findBoard(sessionId) {
+      const row = await prisma.sessionBoard.findUnique({ where: { sessionId } });
+      return row ? { scene: row.scene as unknown as BoardScene, updatedAt: row.updatedAt } : null;
+    },
+
+    async saveBoard(sessionId, scene) {
+      const json = scene as unknown as Prisma.InputJsonValue;
+      const row = await prisma.sessionBoard.upsert({
+        where: { sessionId },
+        create: { sessionId, scene: json },
+        update: { scene: json },
+      });
+      return { scene: row.scene as unknown as BoardScene, updatedAt: row.updatedAt };
     },
 
     async createSession(data) {

@@ -11,6 +11,9 @@ import { createServices, type ServiceOptions } from "./services/index.js";
 import { buildOpenApi } from "./docs/openapi.js";
 import { createDocsRouter } from "./docs/ui.js";
 
+/** For routes that carry a whiteboard scene or an edited AI reply. */
+const LARGE_BODY_LIMIT = "2mb";
+
 export interface AppDeps {
   config: Config;
   /** Resolves when the database answers; rejects otherwise. */
@@ -43,6 +46,15 @@ export async function createApp({ config, pingDb, repositories, sessionOptions, 
 
   app.use(helmet());
   app.use(cors({ origin: config.corsOrigins }));
+  // Most bodies are tiny, so the default is strict. These two carry a drawing or an edited AI reply (a mindmap, a test)
+  // and get a larger limit; the first parser that matches reads the body and the strict one then skips it.
+  app.use(
+    [
+      new RegExp(`^${API_PREFIX}/sessions/[^/]+/board$`),
+      new RegExp(`^${API_PREFIX}/chats/[^/]+/messages/[^/]+$`),
+    ],
+    express.json({ limit: LARGE_BODY_LIMIT }),
+  );
   app.use(express.json({ limit: "10kb" }));
 
   app.get("/healthz", (_req, res) => {

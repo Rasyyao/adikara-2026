@@ -2,7 +2,7 @@ import type { Request, RequestHandler } from "express";
 import { ref } from "../../docs/schemas.js";
 import { requireAuth } from "../../http/middleware/authenticate.js";
 import { parseUuidParam } from "../../http/validators/shared/common.js";
-import { parseCreateChat, parseMessageQuery, parseMessageText, parseOptionalFile } from "../../http/validators/teacher/chat.js";
+import { parseCreateChat, parseEditedContent, parseMessageQuery, parseMessageText, parseOptionalFile } from "../../http/validators/teacher/chat.js";
 import { subscribeChatEvents } from "../../lib/chat-events.js";
 import type { TeacherChatService } from "../../services/teacher/chat.service.js";
 import { errorDoc } from "../docs-helpers.js";
@@ -65,6 +65,24 @@ export function teacherChatRoutes(service: TeacherChatService, upload: RequestHa
           responses: {
             200: { description: "The chat and its materials", schema: ref("ChatDetail") },
             404: errorDoc("chat_not_found", "No such chat, or it belongs to another teacher.", "Chat not found"),
+          },
+        },
+      },
+      {
+        method: "patch",
+        path: "/chats/:id/messages/:messageId",
+        access: "staff",
+        handler: async (req, res) => {
+          const content = parseEditedContent(req.body);
+          res.json(await service.editMessage(requireAuth(req), chatId(req), parseUuidParam(req.params.messageId, "messageId"), content));
+        },
+        doc: {
+          summary: "Edit an AI reply",
+          description: "Replaces the content of an assistant message, for example after the teacher edited the mindmap inside it. Messages of the teacher cannot be edited.",
+          requestBody: { schema: { type: "object", required: ["content"], properties: { content: { type: "string" } } }, example: { content: "```mindmap\n{}\n```" } },
+          responses: {
+            200: { description: "The edited message", schema: { type: "object" } },
+            404: errorDoc("message_not_found", "No such assistant message in this chat.", "Message not found"),
           },
         },
       },

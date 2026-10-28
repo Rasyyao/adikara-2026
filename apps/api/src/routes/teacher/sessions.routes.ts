@@ -1,7 +1,7 @@
 import { ref } from "../../docs/schemas.js";
 import { requireAuth } from "../../http/middleware/authenticate.js";
 import { parseUuidParam } from "../../http/validators/shared/common.js";
-import { parseCreateSession, parseLock, parseSessionListQuery } from "../../http/validators/teacher/session.js";
+import { parseAssignMaterial, parseBoardScene, parseCreateSession, parseLock, parseSessionListQuery } from "../../http/validators/teacher/session.js";
 import type { TeacherSessionService } from "../../services/teacher/session.service.js";
 import { errorDoc } from "../docs-helpers.js";
 import type { RouteGroup } from "../types.js";
@@ -41,18 +41,19 @@ export function teacherSessionRoutes(service: TeacherSessionService): RouteGroup
         path: "/sessions",
         access: "staff",
         handler: async (req, res) => {
-          const { classCode } = parseCreateSession(req.body);
-          res.status(201).json(await service.createSession(requireAuth(req), classCode));
+          const { classCode, chatId } = parseCreateSession(req.body);
+          res.status(201).json(await service.createSession(requireAuth(req), classCode, chatId));
         },
         doc: {
           summary: "Start a live session",
           description:
             "Creates a session for one of the teacher's classes and returns its 6-digit PIN (`session.join_code`). " +
+            "Optionally pass `chat_id`, a material the teacher already prepared, so it is ready when the class starts. " +
             "A class can have only one live session at a time. The session closes by itself after its time limit.",
           requestBody: { schema: ref("CreateSessionRequest"), example: { class_code: "KELAS7A" } },
           responses: {
             201: { description: "Session created, status LOBBY", schema: ref("SessionDetail") },
-            404: errorDoc("class_not_found", "No such class, or it belongs to another teacher.", "Class not found"),
+            404: errorDoc("class_not_found", "No such class, or it belongs to another teacher (`class_not_found`); or the material is not the teacher's (`material_not_found`).", "Class not found"),
             409: errorDoc("session_already_active", "The class already has a live session (`details.session_id`), or the class is archived.", "This class already has a live session"),
           },
         },
@@ -69,6 +70,61 @@ export function teacherSessionRoutes(service: TeacherSessionService): RouteGroup
           responses: {
             200: { description: "The session and everyone who joined", schema: ref("SessionDetail") },
             404: SESSION_NOT_FOUND,
+          },
+        },
+      },
+      {
+        method: "get",
+        path: "/sessions/:id/board",
+        access: "staff",
+        handler: async (req, res) => {
+          res.json(await service.getBoard(requireAuth(req), idOf(req)));
+        },
+        doc: {
+          summary: "The session's whiteboard",
+          description: "The saved drawing (an Excalidraw scene), or `board: null` when nothing was drawn yet. Also works after the session ended.",
+          responses: {
+            200: { description: "The whiteboard", schema: ref("BoardResponse") },
+            404: SESSION_NOT_FOUND,
+          },
+        },
+      },
+      {
+        method: "put",
+        path: "/sessions/:id/board",
+        access: "staff",
+        handler: async (req, res) => {
+          res.json(await service.saveBoard(requireAuth(req), idOf(req), parseBoardScene(req.body)));
+        },
+        doc: {
+          summary: "Save the session's whiteboard",
+          description: "Replaces the drawing with the scene sent (the latest save wins). The body may be up to 2 MB. Refused once the session has ended.",
+          requestBody: { schema: ref("BoardScene"), example: { elements: [], appState: { viewBackgroundColor: "#ffffff" } } },
+          responses: {
+            200: { description: "Saved", schema: { type: "object", required: ["updated_at"], properties: { updated_at: { type: "string", format: "date-time" } } } },
+            404: SESSION_NOT_FOUND,
+            409: SESSION_ENDED,
+          },
+        },
+      },
+      {
+        method: "put",
+        path: "/sessions/:id/material",
+        access: "staff",
+        handler: async (req, res) => {
+          const { chatId } = parseAssignMaterial(req.body);
+          res.json(await service.assignMaterial(requireAuth(req), idOf(req), chatId));
+        },
+        doc: {
+          summary: "Assign a prepared material to the session",
+          description:
+            "Links one of the teacher's chats (its files, mindmap and approved tests) to the session, so the teacher only has to open it during class. " +
+            "Send `chat_id: null` to remove it. Works while the session is LOBBY or ACTIVE.",
+          requestBody: { schema: ref("AssignMaterialRequest"), example: { chat_id: "3f2b8a52-7c1e-4a8e-9a3a-0d5c4d2a9f11" } },
+          responses: {
+            200: { description: "The session with its material", schema: ref("SessionDetail") },
+            404: errorDoc("material_not_found", "No such chat, or it belongs to another teacher.", "Material not found"),
+            409: SESSION_ENDED,
           },
         },
       },
