@@ -13,6 +13,12 @@ const EVENT_TYPES = [
   "session_unlocked",
   "session_ended",
   "kicked",
+  "board_ops",
+  "board_mode",
+  "cursor",
+  "quiz_opened",
+  "quiz_closed",
+  "quiz_progress",
 ] as const;
 
 export type StreamEventType = (typeof EVENT_TYPES)[number];

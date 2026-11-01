@@ -27,6 +27,8 @@ const fileCsp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // the end-to-end tests run a second dev server next to yours, with its own build folder (`next dev` locks its own)
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,

@@ -47,10 +47,20 @@ const EXPECTED_TAGS: Record<string, string> = {
   "post /sessions/{id}/end": "Teacher · sessions",
   "delete /sessions/{id}/participants/{studentId}": "Teacher · sessions",
   "get /sessions/{id}/attendance": "Teacher · sessions",
+  "post /sessions/{id}/quizzes": "Teacher · sessions",
+  "get /sessions/{id}/quizzes": "Teacher · sessions",
+  "post /sessions/{id}/quizzes/{quizId}/close": "Teacher · sessions",
+  "get /sessions/{id}/quizzes/{quizId}/results": "Teacher · sessions",
+  "get /sessions/{id}/quizzes/{quizId}/export": "Teacher · sessions",
   "post /auth/student/login": "Student · auth",
   "post /sessions/join": "Student · sessions",
+  "get /sessions/{id}/quizzes/{quizId}": "Student · sessions",
+  "post /sessions/{id}/quizzes/{quizId}/attempt": "Student · sessions",
+  "put /sessions/{id}/quizzes/{quizId}/attempt/answers": "Student · sessions",
+  "post /sessions/{id}/quizzes/{quizId}/attempt/submit": "Student · sessions",
   "get /auth/me": "Shared · auth",
   "get /sessions/{id}/events": "Shared · sessions",
+  "post /sessions/{id}/live": "Shared · sessions",
 };
 
 describe("Swagger: endpoints are grouped by role", () => {

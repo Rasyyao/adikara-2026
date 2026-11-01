@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpRight, Circle, Copy, Diamond, Eraser, Hand, Minus, MousePointer2, Pencil, Redo2, Square, Trash2, Type, Undo2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { FILL_COLORS, STROKE_COLORS, STROKE_WIDTHS, TOOL_LABELS, type Style, type Tool } from "./types";
 
 const TOOLS: { tool: Tool; key: string; Icon: typeof Square }[] = [
@@ -16,6 +16,9 @@ const TOOLS: { tool: Tool; key: string; Icon: typeof Square }[] = [
   { tool: "text", key: "T", Icon: Type },
   { tool: "eraser", key: "E", Icon: Eraser },
 ];
+
+/** Tool ids where a divider is drawn before the tool, so the row reads as groups. */
+const GROUP_START = new Set<Tool>(["rectangle", "arrow", "text"]);
 
 const PANEL = "rounded-lg border border-border bg-surface shadow-[var(--shadow-overlay)]";
 
@@ -40,8 +43,8 @@ export function IconButton({
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
-      className={`flex size-10 shrink-0 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        active ? "bg-primary text-white" : "text-ink hover:bg-bg"
+      className={`relative flex size-10 shrink-0 select-none items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        active ? "bg-primary text-white shadow-sm" : "text-ink hover:bg-bg"
       }`}
     >
       {children}
@@ -54,9 +57,15 @@ export function ToolBar({ tool, onTool }: { tool: Tool; onTool: (tool: Tool) => 
   return (
     <div role="toolbar" aria-label="Alat papan tulis" className={`${PANEL} flex max-w-full items-center gap-0.5 overflow-x-auto p-1`}>
       {TOOLS.map(({ tool: id, key, Icon }) => (
-        <IconButton key={id} label={`${TOOL_LABELS[id]} (${key})`} active={tool === id} onClick={() => onTool(id)}>
-          <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
-        </IconButton>
+        <Fragment key={id}>
+          {GROUP_START.has(id) && <span aria-hidden="true" className="mx-1 h-6 w-px shrink-0 bg-border" />}
+          <IconButton label={`${TOOL_LABELS[id]} (${key})`} active={tool === id} onClick={() => onTool(id)}>
+            <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
+            <span aria-hidden="true" className={`pointer-events-none absolute bottom-0.5 right-1 text-[9px] font-semibold leading-none ${tool === id ? "text-white/70" : "text-muted/70"}`}>
+              {key}
+            </span>
+          </IconButton>
+        </Fragment>
       ))}
     </div>
   );
@@ -95,6 +104,18 @@ export function StylePanel({
   onDelete: () => void;
   onDuplicate: () => void;
 }) {
+  if (!showColors) {
+    return (
+      <div className={`${PANEL} flex gap-0.5 p-1`}>
+        <IconButton label="Hapus (Delete)" onClick={onDelete}>
+          <Trash2 size={18} strokeWidth={1.75} aria-hidden="true" />
+        </IconButton>
+        <IconButton label="Gandakan (Ctrl+D)" onClick={onDuplicate}>
+          <Copy size={18} strokeWidth={1.75} aria-hidden="true" />
+        </IconButton>
+      </div>
+    );
+  }
   return (
     <div className={`${PANEL} flex w-44 flex-col gap-3 p-3`}>
       {hasSelection && (
@@ -172,29 +193,26 @@ export function ViewBar({
   onFit: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className={`${PANEL} flex items-center p-1`}>
-        <button type="button" aria-label="Perkecil (-)" title="Perkecil (-)" onClick={onZoomOut} className="flex size-10 items-center justify-center rounded-md text-lg font-semibold hover:bg-bg">
-          −
-        </button>
-        <button type="button" title="Kembali ke 100%" onClick={onResetZoom} className="min-w-14 rounded-md px-1 text-caption font-semibold tabular-nums hover:bg-bg">
-          {Math.round(zoom * 100)}%
-        </button>
-        <button type="button" aria-label="Perbesar (+)" title="Perbesar (+)" onClick={onZoomIn} className="flex size-10 items-center justify-center rounded-md text-lg font-semibold hover:bg-bg">
-          +
-        </button>
-        <button type="button" title="Tampilkan semua gambar (Shift+1)" onClick={onFit} className="h-10 rounded-md px-2 text-caption font-semibold hover:bg-bg">
-          Pas layar
-        </button>
-      </div>
-      <div className={`${PANEL} flex items-center p-1`}>
-        <IconButton label="Urungkan (Ctrl+Z)" onClick={onUndo} disabled={!canUndo}>
-          <Undo2 size={18} strokeWidth={1.75} aria-hidden="true" />
-        </IconButton>
-        <IconButton label="Ulangi (Ctrl+Shift+Z)" onClick={onRedo} disabled={!canRedo}>
-          <Redo2 size={18} strokeWidth={1.75} aria-hidden="true" />
-        </IconButton>
-      </div>
+    <div className={`${PANEL} flex select-none items-center p-1`}>
+      <button type="button" aria-label="Perkecil (-)" title="Perkecil (-)" onClick={onZoomOut} className="flex size-10 items-center justify-center rounded-md text-lg font-semibold hover:bg-bg">
+        −
+      </button>
+      <button type="button" title="Kembali ke 100%" onClick={onResetZoom} className="min-w-14 rounded-md px-1 text-caption font-semibold tabular-nums hover:bg-bg">
+        {Math.round(zoom * 100)}%
+      </button>
+      <button type="button" aria-label="Perbesar (+)" title="Perbesar (+)" onClick={onZoomIn} className="flex size-10 items-center justify-center rounded-md text-lg font-semibold hover:bg-bg">
+        +
+      </button>
+      <button type="button" title="Tampilkan semua gambar (Shift+1)" onClick={onFit} className="h-10 rounded-md px-2 text-caption font-semibold hover:bg-bg">
+        Pas layar
+      </button>
+      <span aria-hidden="true" className="mx-1 h-6 w-px bg-border" />
+      <IconButton label="Urungkan (Ctrl+Z)" onClick={onUndo} disabled={!canUndo}>
+        <Undo2 size={18} strokeWidth={1.75} aria-hidden="true" />
+      </IconButton>
+      <IconButton label="Ulangi (Ctrl+Shift+Z)" onClick={onRedo} disabled={!canRedo}>
+        <Redo2 size={18} strokeWidth={1.75} aria-hidden="true" />
+      </IconButton>
     </div>
   );
 }

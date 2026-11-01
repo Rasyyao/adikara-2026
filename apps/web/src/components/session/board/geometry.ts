@@ -4,7 +4,11 @@ import {
   DEFAULT_STYLE,
   type BoardElement,
   type BoardMindmapNode,
+  type BoxElement,
   type Bounds,
+  type DiagramKind,
+  type DiagramTag,
+  type FlowNodeKind,
   type MindmapElement,
   type Point,
   type PointsElement,
@@ -86,6 +90,8 @@ export function boundsOf(el: BoardElement): Bounds {
       const layout = mindmapLayoutOf(el);
       return { x: el.x, y: el.y, w: layout.w * el.scale, h: layout.h * el.scale };
     }
+    case "quiz":
+      return { x: el.x, y: el.y, w: el.width, h: el.height };
     default: {
       const xs = el.points.map((p) => p[0] + el.x);
       const ys = el.points.map((p) => p[1] + el.y);
@@ -145,6 +151,10 @@ export function hitElement(el: BoardElement, p: Point, tol: number): boolean {
       const slack = tol / el.scale;
       return layout.nodes.some((n) => px >= n.x - slack && px <= n.x + n.width + slack && py >= n.y - slack && py <= n.y + n.height + slack);
     }
+    case "quiz": {
+      const b = boundsOf(el);
+      return p[0] >= b.x - tol && p[0] <= b.x + b.w + tol && p[1] >= b.y - tol && p[1] <= b.y + b.h + tol;
+    }
     case "line":
     case "arrow":
     case "freedraw": {
@@ -154,7 +164,7 @@ export function hitElement(el: BoardElement, p: Point, tol: number): boolean {
     }
     default: {
       const b = boundsOf(el);
-      const filled = el.backgroundColor !== "transparent";
+      const filled = el.backgroundColor !== "transparent" || Boolean(el.label); // a labelled shape can be picked by its inside
       if (el.type === "ellipse") {
         const rx = b.w / 2 || 0.0001;
         const ry = b.h / 2 || 0.0001;
@@ -172,6 +182,79 @@ export function hitElement(el: BoardElement, p: Point, tol: number): boolean {
       return distToPolygon(p, corners) <= reach;
     }
   }
+}
+
+/** Font size of the text in the middle of a shape. */
+export const LABEL_FONT = 18;
+
+/** Wraps text to `maxWidth`, keeping the writer's own line breaks. */
+export function wrapToWidth(text: string, fontSize: number, maxWidth: number): string[] {
+  const lines: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    let line = "";
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && measureText(next, fontSize).w > maxWidth) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+/** The width the label of a shape may use; a diamond has less room in its middle. */
+export const labelWidthOf = (el: BoxElement) => Math.max(8, boundsOf(el).w * (el.type === "diamond" ? 0.55 : 0.85));
+
+const MIN_LABEL_FONT = 5;
+const labelFontCache = new Map<string, number>();
+
+/**
+ * The size a shape's label is drawn at: its own size (which a resize scales with the shape), made smaller still
+ * while the wrapped text would not fit inside, so a shrunk shape never has its text spill out.
+ */
+export function labelFontOf(el: BoxElement): number {
+  const base = el.fontSize ?? LABEL_FONT;
+  if (!el.label) return base;
+  const b = boundsOf(el);
+  const key = `${el.type}|${b.w.toFixed(1)}|${b.h.toFixed(1)}|${base.toFixed(2)}|${el.label}`;
+  const cached = labelFontCache.get(key);
+  if (cached !== undefined) return cached;
+  const maxW = labelWidthOf(el);
+  const maxH = el.type === "diamond" ? b.h * 0.6 : el.type === "ellipse" ? b.h * 0.8 : Math.max(4, b.h - 8);
+  let size = base;
+  for (let i = 0; i < 24 && size > MIN_LABEL_FONT; i++) {
+    const lines = wrapToWidth(el.label, size, maxW);
+    if (lines.length * lineHeightOf(size) <= maxH && lines.every((line) => measureText(line, size).w <= maxW + 0.5)) break;
+    size = Math.max(MIN_LABEL_FONT, size * 0.9);
+  }
+  if (labelFontCache.size > 2000) labelFontCache.clear();
+  labelFontCache.set(key, size);
+  return size;
+}
+
+/** The ids of `ids` plus everyone who shares a group with them. */
+export function withGroupMembers(ids: string[], all: BoardElement[]): string[] {
+  const groups = new Set(all.filter((e) => ids.includes(e.id) && e.groupId).map((e) => e.groupId));
+  return all.filter((e) => ids.includes(e.id) || (e.groupId && groups.has(e.groupId))).map((e) => e.id);
+}
+
+/** Copies with new ids, shifted by (dx, dy); every group and diagram is given a new id too, so a copy never joins the original's. */
+export function cloneElements(els: BoardElement[], dx: number, dy: number): BoardElement[] {
+  const groups = new Map<string, string>();
+  const renamed = (id: string) => {
+    if (!groups.has(id)) groups.set(id, newId());
+    return groups.get(id)!;
+  };
+  return els.map((e) => {
+    const copy: BoardElement = { ...moveElement(e, dx, dy), id: newId(), version: 1 };
+    if (e.groupId) copy.groupId = renamed(e.groupId);
+    if (e.diagram) copy.diagram = { ...e.diagram, id: renamed(e.diagram.id) };
+    return copy;
+  });
 }
 
 export function moveElement<T extends BoardElement>(el: T, dx: number, dy: number): T {
@@ -197,7 +280,9 @@ export function transformElements(els: BoardElement[], from: Bounds, to: Bounds)
         const y1 = mapY(el.y);
         const x2 = mapX(el.x + el.width);
         const y2 = mapY(el.y + el.height);
-        return { ...el, x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), version };
+        // the label grows and shrinks with the shape; the geometric mean keeps a stretch and its undo-stretch symmetric
+        const fontSize = Math.max(MIN_LABEL_FONT, Math.min(160, (el.fontSize ?? LABEL_FONT) * Math.sqrt(Math.abs(sx * sy))));
+        return { ...el, x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), fontSize, version };
       }
       case "text": {
         const b = boundsOf(el);
@@ -212,6 +297,13 @@ export function transformElements(els: BoardElement[], from: Bounds, to: Bounds)
         const x1 = mapX(b.x);
         const x2 = mapX(b.x + b.w);
         return { ...el, x: Math.min(x1, x2), y: Math.min(mapY(b.y), mapY(b.y + b.h)), scale: el.scale * factor, version };
+      }
+      case "quiz": {
+        // a quiz card keeps its proportions, so its QR code stays square and scannable
+        const factor = Math.max(0.3, (Math.abs(sx) + Math.abs(sy)) / 2);
+        const x1 = mapX(el.x);
+        const x2 = mapX(el.x + el.width);
+        return { ...el, x: Math.min(x1, x2), y: Math.min(mapY(el.y), mapY(el.y + el.height)), width: el.width * factor, height: el.height * factor, version };
       }
       default: {
         const abs = el.points.map((q): Point => [mapX(q[0] + el.x), mapY(q[1] + el.y)]);
@@ -253,6 +345,22 @@ export function arrowHeadPath(el: PointsElement): string {
 const isPoint = (value: unknown): value is Point =>
   Array.isArray(value) && value.length >= 2 && typeof value[0] === "number" && typeof value[1] === "number";
 
+const DIAGRAM_KINDS: DiagramKind[] = ["flow", "timeline", "comparison", "trace"];
+const NODE_KINDS: FlowNodeKind[] = ["start", "step", "decision", "end"];
+
+function sanitizeDiagramTag(raw: unknown): DiagramTag | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== "string" || !DIAGRAM_KINDS.includes(r.kind as DiagramKind)) return null;
+  const tag: DiagramTag = { id: r.id, kind: r.kind as DiagramKind };
+  for (const key of ["node", "from", "to", "label", "hint"] as const) if (typeof r[key] === "string") tag[key] = r[key];
+  if (NODE_KINDS.includes(r.nodeKind as FlowNodeKind)) tag.nodeKind = r.nodeKind as FlowNodeKind;
+  if (typeof r.step === "number") tag.step = r.step;
+  if (r.deco === true) tag.deco = true;
+  if (r.changed === true) tag.changed = true;
+  return tag;
+}
+
 /** Reads elements saved earlier (ours or Excalidraw's) into the editor's shape; anything it cannot draw is dropped. */
 export function sanitizeElements(raw: unknown[]): BoardElement[] {
   const out: BoardElement[] = [];
@@ -265,9 +373,27 @@ export function sanitizeElements(raw: unknown[]): BoardElement[] {
       backgroundColor: typeof r.backgroundColor === "string" ? r.backgroundColor : DEFAULT_STYLE.backgroundColor,
       strokeWidth: typeof r.strokeWidth === "number" ? r.strokeWidth : DEFAULT_STYLE.strokeWidth,
     };
-    const base = { id: r.id, x: r.x, y: r.y, version: typeof r.version === "number" ? r.version : 1, ...style };
+    const diagram = sanitizeDiagramTag(r.diagram);
+    const base = {
+      id: r.id,
+      x: r.x,
+      y: r.y,
+      version: typeof r.version === "number" ? r.version : 1,
+      ...style,
+      ...(typeof r.groupId === "string" ? { groupId: r.groupId } : {}),
+      ...(diagram ? { diagram } : {}),
+    };
     if (r.type === "rectangle" || r.type === "ellipse" || r.type === "diamond") {
-      if (typeof r.width === "number" && typeof r.height === "number") out.push({ ...base, type: r.type, width: r.width, height: r.height });
+      if (typeof r.width === "number" && typeof r.height === "number") {
+        out.push({
+          ...base,
+          type: r.type,
+          width: r.width,
+          height: r.height,
+          ...(typeof r.label === "string" && r.label ? { label: r.label } : {}),
+          ...(typeof r.fontSize === "number" && r.fontSize > 0 ? { fontSize: r.fontSize } : {}),
+        });
+      }
     } else if (r.type === "line" || r.type === "arrow" || r.type === "freedraw") {
       const points = Array.isArray(r.points) ? r.points.filter(isPoint).map((p): Point => [p[0], p[1]]) : [];
       if (points.length > 0) out.push({ ...base, type: r.type, points });
@@ -275,7 +401,7 @@ export function sanitizeElements(raw: unknown[]): BoardElement[] {
       const nodes = r.nodes.flatMap((n): BoardMindmapNode[] => {
         const node = n as Record<string, unknown> | null;
         if (!node || typeof node.id !== "string" || typeof node.label !== "string") return [];
-        return [{ id: node.id, parent_id: typeof node.parent_id === "string" ? node.parent_id : null, label: node.label }];
+        return [{ id: node.id, parent_id: typeof node.parent_id === "string" ? node.parent_id : null, label: node.label, ...(typeof node.text === "string" && node.text ? { text: node.text } : {}) }];
       });
       if (nodes.length > 0) {
         out.push({
@@ -287,6 +413,19 @@ export function sanitizeElements(raw: unknown[]): BoardElement[] {
           scale: typeof r.scale === "number" && r.scale > 0 ? r.scale : 1,
         });
       }
+    } else if (r.type === "quiz" && typeof r.quizId === "string" && typeof r.sessionId === "string" && typeof r.width === "number" && typeof r.height === "number") {
+      out.push({
+        ...base,
+        type: "quiz",
+        width: r.width,
+        height: r.height,
+        quizId: r.quizId,
+        sessionId: r.sessionId,
+        title: typeof r.title === "string" ? r.title : "Kuis",
+        kind: typeof r.kind === "string" ? r.kind : "quiz",
+        questionCount: typeof r.questionCount === "number" ? r.questionCount : 0,
+        ...(r.closed === true ? { closed: true } : {}),
+      });
     } else if (r.type === "text" && typeof r.text === "string") {
       out.push({ ...base, type: "text", text: r.text, fontSize: typeof r.fontSize === "number" ? r.fontSize : DEFAULT_FONT_SIZE });
     }

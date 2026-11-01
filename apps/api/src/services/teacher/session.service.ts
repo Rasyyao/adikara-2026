@@ -2,6 +2,7 @@ import { AppError } from "../../http/errors.js";
 import type { AuthContext } from "../../types/auth.types.js";
 import type { ParticipantRecord, SessionRecord } from "../../types/shared/session.types.js";
 import type { BoardScene, TeacherSessionRepository } from "../../types/teacher/session.types.js";
+import type { LiveBoardService } from "../shared/live-board.service.js";
 import type { SessionCore } from "../shared/session-core.js";
 import {
   iso,
@@ -67,7 +68,7 @@ function byName(a: { name: string | null; username: string | null }, b: { name: 
   return (a.name ?? a.username ?? "").localeCompare(b.name ?? b.username ?? "");
 }
 
-export function createTeacherSessionService(repository: TeacherSessionRepository, core: SessionCore): TeacherSessionService {
+export function createTeacherSessionService(repository: TeacherSessionRepository, core: SessionCore, liveBoard?: LiveBoardService): TeacherSessionService {
   const { options, hub, sessions } = core;
 
   async function buildAttendance(session: SessionRecord): Promise<Attendance> {
@@ -179,6 +180,7 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
       const session = await core.loadManaged(auth, sessionId);
       if (session.status === "ENDED") throw sessionEnded();
       const saved = await repository.saveBoard(session.id, scene);
+      liveBoard?.replace(session.id, scene.elements);
       return { updated_at: saved.updatedAt.toISOString() };
     },
 

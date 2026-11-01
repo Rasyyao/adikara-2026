@@ -10,7 +10,13 @@ export type SessionEventType =
   | "session_locked"
   | "session_unlocked"
   | "session_ended"
-  | "kicked";
+  | "kicked"
+  | "board_ops"
+  | "board_mode"
+  | "cursor"
+  | "quiz_opened"
+  | "quiz_closed"
+  | "quiz_progress";
 
 export interface SessionEvent {
   type: SessionEventType;

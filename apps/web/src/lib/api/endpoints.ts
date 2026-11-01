@@ -13,7 +13,12 @@ import type {
   LiveSession,
   LoginResult,
   MessageView,
+  NewQuiz,
   PublicUser,
+  QuizChoiceChange,
+  QuizResults,
+  QuizView,
+  StudentQuiz,
   SendMessageResult,
   SessionDetail,
   SessionView,
@@ -60,6 +65,23 @@ export const teacherSessionsApi = {
 
 export const studentSessionsApi = {
   join: (token: string, code: string) => apiFetch<JoinResult>("/sessions/join", { method: "POST", token, body: { code } }),
+};
+
+export const teacherQuizzesApi = {
+  create: (token: string, sessionId: string, quiz: NewQuiz) => apiFetch<{ quiz: QuizView }>(`/sessions/${sessionId}/quizzes`, { method: "POST", token, body: quiz }),
+  list: (token: string, sessionId: string) => apiFetch<{ items: (QuizView & { started: number; submitted: number })[] }>(`/sessions/${sessionId}/quizzes`, { token }),
+  close: (token: string, sessionId: string, quizId: string) => apiFetch<{ quiz: QuizView }>(`/sessions/${sessionId}/quizzes/${quizId}/close`, { method: "POST", token, body: {} }),
+  results: (token: string, sessionId: string, quizId: string) => apiFetch<QuizResults>(`/sessions/${sessionId}/quizzes/${quizId}/results`, { token }),
+  exportData: (token: string, sessionId: string, quizId: string) => apiFetch<Record<string, unknown>>(`/sessions/${sessionId}/quizzes/${quizId}/export`, { token }),
+};
+
+export const studentQuizzesApi = {
+  play: (token: string, sessionId: string, quizId: string) => apiFetch<StudentQuiz>(`/sessions/${sessionId}/quizzes/${quizId}`, { token }),
+  start: (token: string, sessionId: string, quizId: string, body: { entry: string; client: Record<string, unknown> }) =>
+    apiFetch<StudentQuiz>(`/sessions/${sessionId}/quizzes/${quizId}/attempt`, { method: "POST", token, body }),
+  answer: (token: string, sessionId: string, quizId: string, body: { question_id: number; choice: string; time_ms: number; visits: number; changes: QuizChoiceChange[] }) =>
+    apiFetch<{ answered: number; total: number }>(`/sessions/${sessionId}/quizzes/${quizId}/attempt/answers`, { method: "PUT", token, body }),
+  submit: (token: string, sessionId: string, quizId: string) => apiFetch<StudentQuiz>(`/sessions/${sessionId}/quizzes/${quizId}/attempt/submit`, { method: "POST", token, body: {} }),
 };
 
 export const teacherChatsApi = {

@@ -132,6 +132,7 @@ model Student {
   practiceSubmissions PracticeSubmission[]
   diagnoses           Diagnosis[]
   sessionParticipants SessionParticipant[]
+  quizAttempts        QuizAttempt[]
 
   @@index([classId])
   @@map("students")
@@ -166,6 +167,7 @@ model ClassSession {
   chatId       String?              @map("chat_id") @db.Uuid
   chat         Chat?                @relation(fields: [chatId], references: [id], onDelete: SetNull)
   board        SessionBoard?
+  quizzes      SessionQuiz[]
 
   @@index([classId, status])
   @@index([teacherId])
@@ -198,6 +200,78 @@ model SessionParticipant {
   @@unique([sessionId, studentId])
   @@index([studentId])
   @@map("session_participants")
+}
+
+// ---------- Kuis di sesi ----------
+
+enum QuizStatus {
+  OPEN   @map("open")
+  CLOSED @map("closed")
+
+  @@map("quiz_status")
+}
+
+/// A test the teacher put on the board of a session. `questions` is a frozen copy (text, options, answer key,
+/// explanation, source), so editing the test later never changes the results; `source_*` says where it came from.
+model SessionQuiz {
+  id              String        @id @default(uuid()) @db.Uuid
+  sessionId       String        @map("session_id") @db.Uuid
+  kind            String // pretest | posttest | quiz
+  title           String
+  questions       Json
+  status          QuizStatus    @default(OPEN)
+  sourceChatId    String?       @map("source_chat_id") @db.Uuid
+  sourceMessageId String?       @map("source_message_id") @db.Uuid
+  openedAt        DateTime      @default(now()) @map("opened_at") @db.Timestamptz
+  closedAt        DateTime?     @map("closed_at") @db.Timestamptz
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  session         ClassSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  attempts        QuizAttempt[]
+
+  @@index([sessionId])
+  @@map("session_quizzes")
+}
+
+/// One student's go at a quiz (one per student). `entry` is how they opened it (board, qr, link); `client` the device.
+model QuizAttempt {
+  id          String         @id @default(uuid()) @db.Uuid
+  quizId      String         @map("quiz_id") @db.Uuid
+  studentId   String         @map("student_id") @db.Uuid
+  startedAt   DateTime       @default(now()) @map("started_at") @db.Timestamptz
+  submittedAt DateTime?      @map("submitted_at") @db.Timestamptz
+  score       Int?
+  total       Int
+  durationMs  Int?           @map("duration_ms")
+  entry       String?
+  client      Json?
+  quiz        SessionQuiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  student     Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  responses   QuizResponse[]
+
+  @@unique([quizId, studentId])
+  @@index([studentId])
+  @@map("quiz_attempts")
+}
+
+/// The answer to one question, with how it was reached: the first pick, every change (`changes`: [{choice, at_ms}]),
+/// time spent on the question, how often it was opened, and the order it was answered in. For analysing where a class
+/// goes wrong, not only how many it got right.
+model QuizResponse {
+  id          String      @id @default(uuid()) @db.Uuid
+  attemptId   String      @map("attempt_id") @db.Uuid
+  questionId  Int         @map("question_id")
+  choice      String
+  firstChoice String      @map("first_choice")
+  isCorrect   Boolean     @map("is_correct")
+  timeMs      Int         @map("time_ms")
+  visits      Int         @default(1)
+  changes     Json
+  answerOrder Int         @map("answer_order")
+  answeredAt  DateTime    @default(now()) @updatedAt @map("answered_at") @db.Timestamptz
+  attempt     QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@map("quiz_responses")
 }
 
 // ---------- Chat dan RAG per chat ----------

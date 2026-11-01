@@ -63,6 +63,7 @@ describe("GET /sessions/:id/events (Server-Sent Events)", () => {
       expect(snapshot.data).toEqual({
         session: { id, class_id: expect.any(String), status: "LOBBY", locked: false, started_at: null },
         participant_count: 2,
+        live: { board: { elements: [] }, draw_allowed: true, me: { id: expect.any(String), name: expect.any(String), role: "student" } },
       });
     });
 

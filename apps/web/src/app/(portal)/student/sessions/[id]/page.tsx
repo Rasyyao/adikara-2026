@@ -11,16 +11,12 @@ async function Room({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isUuid(id)) notFound();
   await requireViewer("student");
-  return (
-    <div className="w-full max-w-[440px] rounded-lg border border-border bg-surface p-8">
-      <StudentWaitingRoom sessionId={id} />
-    </div>
-  );
+  return <StudentWaitingRoom sessionId={id} />;
 }
 
 export default function SiswaSessionPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <div className="flex min-h-[calc(100dvh-160px)] w-full items-center justify-center">
+    <div className="w-full">
       <Suspense fallback={<CenteredLoader label="Membuka sesi…" />}>
         <Room params={params} />
       </Suspense>

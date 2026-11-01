@@ -11,6 +11,7 @@
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:db": "./scripts/test-db.sh",
     "seed": "prisma db seed",
     "routes": "tsx src/cli/routes.ts",
     "openapi": "tsx src/cli/openapi.ts"

@@ -18,6 +18,7 @@ export const SESSION_PATHS = {
   kick: (id: string, studentId: string) => `/api/v1/sessions/${id}/participants/${studentId}`,
   attendance: (id: string) => `/api/v1/sessions/${id}/attendance`,
   events: (id: string) => `/api/v1/sessions/${id}/events`,
+  liveBoard: (id: string) => `/api/v1/sessions/${id}/live`,
 } as const;
 
 /** The teacher who owns KELAS7A, another teacher, an admin, and the students (ids match the fake repositories). */

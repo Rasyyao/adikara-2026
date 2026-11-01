@@ -2,6 +2,7 @@ import { AppError } from "../../http/errors.js";
 import type { EventSink, SessionEvent, Viewer } from "../../lib/event-hub.js";
 import type { AuthContext } from "../../types/auth.types.js";
 import type { SessionRecord } from "../../types/shared/session.types.js";
+import type { LiveBoardService } from "./live-board.service.js";
 import type { SessionCore } from "./session-core.js";
 import { sessionNotFound, toStudentSessionView } from "./session-views.js";
 
@@ -20,7 +21,7 @@ export interface SessionStreamService {
   subscribe(auth: AuthContext, sessionId: string, sink: EventSink): Promise<SessionStream>;
 }
 
-export function createSessionStreamService(core: SessionCore): SessionStreamService {
+export function createSessionStreamService(core: SessionCore, liveBoard?: LiveBoardService): SessionStreamService {
   const { hub, sessions } = core;
 
   return {
@@ -45,7 +46,9 @@ export function createSessionStreamService(core: SessionCore): SessionStreamServ
         viewer.kind === "staff"
           ? { ...(await core.detail(session)) }
           : { session: toStudentSessionView(session), participant_count: await core.countJoined(session.id) };
-      const snapshot: SessionEvent = { type: "snapshot", data: snapshotData };
+      // the shared whiteboard comes with the snapshot, so a board change cannot slip between reading it and following it
+      const live = liveBoard && session.status !== "ENDED" ? { live: await liveBoard.snapshot(auth, session) } : {};
+      const snapshot: SessionEvent = { type: "snapshot", data: { ...snapshotData, ...live } };
 
       if (session.status === "ENDED") return { snapshot, ended: true, activate() {}, unsubscribe() {} };
 

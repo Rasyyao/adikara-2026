@@ -33,6 +33,7 @@ export function MindmapElementView({ el }: { el: MindmapElement }) {
   const root = useRef<SVGGElement>(null);
   const working = useRef<Record<string, AnimatedNodeState>>({}); // the animation's own state; only the effect touches it
   const [frame, setFrame] = useState<{ nodes: Record<string, AnimatedNodeState>; pulse: number }>({ nodes: {}, pulse: 0 });
+  const [hovered, setHovered] = useState<string | null>(null);
 
   useEffect(() => {
     let raf = 0;
@@ -103,8 +104,12 @@ export function MindmapElementView({ el }: { el: MindmapElement }) {
         return (
           <g
             key={node.id}
+            data-mm-node={`${el.id}|${node.id}`}
             opacity={state.opacity}
-            transform={`translate(${state.x + node.width / 2} ${state.y + node.height / 2}) scale(${state.scale}) translate(${-node.width / 2} ${-node.height / 2})`}
+            transform={`translate(${state.x + node.width / 2} ${state.y + node.height / 2}) scale(${state.scale * (hovered === node.id ? 1.04 : 1)}) translate(${-node.width / 2} ${-node.height / 2})`}
+            style={{ cursor: "pointer", filter: hovered === node.id ? "drop-shadow(0 3px 6px rgb(15 23 42 / 0.28))" : undefined }}
+            onPointerEnter={() => setHovered(node.id)}
+            onPointerLeave={() => setHovered((current) => (current === node.id ? null : current))}
           >
             <rect width={node.width} height={node.height} rx={14} fill={palette.bg} />
             <text fill={palette.text} fontFamily={FONT_FAMILY} fontSize={isRoot ? 15 : 13} fontWeight={isRoot ? 700 : 600} style={{ userSelect: "none" }}>

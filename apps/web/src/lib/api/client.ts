@@ -62,3 +62,14 @@ export function apiRaw(path: string, token: string, signal: AbortSignal): Promis
     signal,
   });
 }
+
+/** For proxying a small JSON POST from the browser (the live whiteboard): the raw upstream response. */
+export function apiForward(path: string, token: string, body: string, signal: AbortSignal): Promise<Response> {
+  return fetch(`${BASE_URL}${API_PREFIX}${path}`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body,
+    cache: "no-store",
+    signal,
+  });
+}

@@ -51,6 +51,7 @@ export async function createApp({ config, pingDb, repositories, sessionOptions, 
   app.use(
     [
       new RegExp(`^${API_PREFIX}/sessions/[^/]+/board$`),
+      new RegExp(`^${API_PREFIX}/sessions/[^/]+/live$`),
       new RegExp(`^${API_PREFIX}/chats/[^/]+/messages/[^/]+$`),
     ],
     express.json({ limit: LARGE_BODY_LIMIT }),

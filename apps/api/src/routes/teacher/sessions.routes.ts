@@ -5,11 +5,13 @@ import { parseAssignMaterial, parseBoardScene, parseCreateSession, parseLock, pa
 import type { TeacherSessionService } from "../../services/teacher/session.service.js";
 import { errorDoc } from "../docs-helpers.js";
 import type { RouteGroup } from "../types.js";
+import { teacherQuizRoutes } from "./quizzes.routes.js";
+import type { QuizService } from "../../services/shared/quiz.service.js";
 
 const SESSION_NOT_FOUND = errorDoc("session_not_found", "Session not found, or it belongs to another teacher.", "Session not found");
 const SESSION_ENDED = errorDoc("session_ended", "The session has already ended.", "The session has ended");
 
-export function teacherSessionRoutes(service: TeacherSessionService): RouteGroup {
+export function teacherSessionRoutes(service: TeacherSessionService, quizzes: QuizService): RouteGroup {
   const idOf = (req: { params: Record<string, unknown> }) => parseUuidParam(req.params.id, "id");
 
   return {
@@ -216,6 +218,7 @@ export function teacherSessionRoutes(service: TeacherSessionService): RouteGroup
           },
         },
       },
+      ...teacherQuizRoutes(quizzes),
     ],
   };
 }

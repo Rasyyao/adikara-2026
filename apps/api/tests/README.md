@@ -16,7 +16,7 @@ One folder per role (and per concern), mirroring `src/`. Run them with `apps/api
 | `cli/` | route list formatting (`pnpm routes`) |
 | `security/` | headers, CORS, rate limiting |
 | `seed/` | the seeder |
-| `integration/` | seed, sessions, admin and chat repositories on a real PostgreSQL (run against the local DATABASE_URL, which they wipe) |
+| `integration/` | seed, sessions, admin, chat and quiz repositories on a real PostgreSQL. They empty their tables, so they run only on `TEST_DATABASE_URL` (a database whose name ends in `_test`; create it with `pnpm test:db`). The development database is hidden from every test. |
 | `helpers/` | fakes and builders shared by tests (not run on their own) |
 
 ## Conventions

@@ -17,7 +17,7 @@ export function loadRouteGroupsForTooling(): RouteGroup[] {
     admin: { teachers: inert(), students: inert(), classes: inert() },
     teacher: { auth: inert(), sessions: inert(), classes: inert(), chats: inert() },
     student: { auth: inert(), sessions: inert() },
-    shared: { profile: inert(), sessionStream: inert() },
+    shared: { profile: inert(), sessionStream: inert(), liveBoard: inert(), quizzes: inert() },
   };
   return createRouteGroups(
     services,

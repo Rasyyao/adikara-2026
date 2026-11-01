@@ -5,6 +5,7 @@ import type { Role } from "../../src/types/auth.types.js";
 import type { ClassRow } from "../../src/types/shared/class.types.js";
 import type { ParticipantRecord, SessionRecord } from "../../src/types/shared/session.types.js";
 import type { BoardRecord } from "../../src/types/teacher/session.types.js";
+import { createFakeQuizRepository } from "./fake-quiz-repository.js";
 import type { ChatMaterialRow, ChatMessageRow, ChatRow, NewMaterial } from "../../src/types/teacher/chat.types.js";
 
 export const PASSWORDS = {
@@ -513,6 +514,7 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
           return participantRecord(row);
         },
       },
+      quizzes: createFakeQuizRepository((id) => studentsById.get(id)),
     },
   };
 

@@ -3,9 +3,11 @@ import { ref } from "../../docs/schemas.js";
 import { requireAuth } from "../../http/middleware/authenticate.js";
 import { parseUuidParam } from "../../http/validators/shared/common.js";
 import type { SessionEvent } from "../../lib/event-hub.js";
+import type { LiveBoardService } from "../../services/shared/live-board.service.js";
 import type { SessionStreamService } from "../../services/shared/session-stream.service.js";
 import { errorDoc } from "../docs-helpers.js";
 import type { RouteGroup } from "../types.js";
+import { liveBoardRoute } from "./live-board.routes.js";
 
 const HEARTBEAT_MS = 25_000;
 
@@ -22,12 +24,13 @@ const SSE_EXAMPLE = [
   "",
 ].join("\n");
 
-export function sessionEventsRoutes(service: SessionStreamService): RouteGroup {
+export function sessionEventsRoutes(service: SessionStreamService, liveBoard: LiveBoardService): RouteGroup {
   return {
     role: "shared",
     feature: "sessions",
-    description: "The live event stream of a session, for the teacher who runs it and the students who joined.",
+    description: "The live event stream of a session, and the whiteboard drawn on together, for the teacher who runs it and the students who joined.",
     routes: [
+      liveBoardRoute(liveBoard),
       {
         method: "get",
         path: "/sessions/:id/events",

@@ -17,7 +17,9 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import type { BoardScene, ChatView, ParticipantView, SessionMaterial, SessionStatus, SessionView } from "@/lib/api/types";
 import { ConnectionBadge } from "./connection-badge";
+import { createLiveChannel, liveEventOf } from "./board/live-sync";
 import type { BoardMaterialInfo } from "./board/material-panel";
+import { SessionQuizList } from "./quiz/session-quiz-list";
 import { SessionWhiteboard } from "./session-whiteboard";
 import { BackLink } from "./back-link";
 import { StatusChip } from "./status-chip";
@@ -62,9 +64,13 @@ export function TeacherLiveSession({ sessionId, className, initial, materials, b
   const [copied, setCopied] = useState(false);
   const [confirm, setConfirm] = useState<null | { kind: "end" } | { kind: "kick"; student: ParticipantView }>(null);
   const [pending, startTransition] = useTransition();
+  /** Board events of the stream, handed to the whiteboard drawn on together with the class. */
+  const [liveBoard] = useState(createLiveChannel);
 
   const onEvent = useCallback<StreamHandler>(
     (type, data) => {
+      const boardEvent = liveEventOf(type, data);
+      if (boardEvent) liveBoard.emit(boardEvent);
       switch (type) {
         case "snapshot": {
           const snapshot = data as unknown as { session: SessionView; participants: ParticipantView[] };
@@ -106,7 +112,7 @@ export function TeacherLiveSession({ sessionId, className, initial, materials, b
           break;
       }
     },
-    [router],
+    [liveBoard, router],
   );
 
   const streamStatus = useSessionStream(sessionId, onEvent);
@@ -182,7 +188,7 @@ export function TeacherLiveSession({ sessionId, className, initial, materials, b
 
       {/* The board stays mounted while hidden, so the drawing, zoom and undo history survive a switch of tab */}
       <div className={view === "board" ? "" : "hidden"}>
-        <SessionWhiteboard sessionId={sessionId} initial={board} material={materialInfo} />
+        <SessionWhiteboard sessionId={sessionId} initial={board} material={materialInfo} live={live.status === "ENDED" ? null : { channel: liveBoard, role: "teacher" }} />
       </div>
 
       <div className={`grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] ${view === "control" ? "" : "hidden"}`}>
@@ -265,6 +271,8 @@ export function TeacherLiveSession({ sessionId, className, initial, materials, b
             </p>
           )}
         </section>
+
+        <SessionQuizList sessionId={sessionId} channel={liveBoard} />
 
         <section aria-label="Siswa yang bergabung" className="rounded-lg bg-surface p-6">
           <div className="flex items-center gap-2">

@@ -156,3 +156,103 @@ export interface SendMessageResult {
   material: MaterialView | null;
   reply_pending: boolean;
 }
+
+// ---- Quizzes ------------------------------------------------------------------------------
+
+export interface QuizOption {
+  key: string;
+  text: string;
+}
+
+export interface QuizQuestionFull {
+  id: number;
+  question: string;
+  options: QuizOption[];
+  answer: string;
+  explanation: string;
+  source: string | null;
+}
+
+export interface QuizView {
+  id: string;
+  session_id: string;
+  kind: string;
+  title: string;
+  status: "open" | "closed";
+  question_count: number;
+  opened_at: string;
+  closed_at: string | null;
+  source_chat_id: string | null;
+  source_message_id: string | null;
+}
+
+/** A pick and when it was made, in milliseconds since the question was first shown. */
+export interface QuizChoiceChange {
+  choice: string;
+  at_ms: number;
+}
+
+export interface StudentQuiz {
+  quiz: QuizView;
+  questions: { id: number; question: string; options: QuizOption[]; answer?: string; explanation?: string }[];
+  attempt: {
+    started_at: string;
+    submitted_at: string | null;
+    score: number | null;
+    total: number;
+    duration_ms: number | null;
+    answers: { question_id: number; choice: string; is_correct?: boolean }[];
+    rank: number | null;
+    ranked: number;
+  } | null;
+}
+
+export interface QuizResults {
+  quiz: QuizView & { questions: QuizQuestionFull[] };
+  summary: {
+    joined: number;
+    started: number;
+    submitted: number;
+    average_score: number | null;
+    average_percent: number | null;
+    highest: number | null;
+    lowest: number | null;
+    average_duration_ms: number | null;
+  };
+  leaderboard: {
+    rank: number | null;
+    student_id: string;
+    name: string;
+    username: string | null;
+    status: "submitted" | "in_progress";
+    score: number;
+    total: number;
+    percent: number;
+    answered: number;
+    duration_ms: number | null;
+    started_at: string;
+    submitted_at: string | null;
+  }[];
+  questions: {
+    id: number;
+    question: string;
+    answer: string;
+    answered: number;
+    correct: number;
+    correct_rate: number | null;
+    average_time_ms: number | null;
+    changed: number;
+    right_to_wrong: number;
+    wrong_to_right: number;
+    options: { key: string; text: string; count: number; is_answer: boolean }[];
+    top_wrong: { key: string; text: string; count: number } | null;
+  }[];
+}
+
+export interface NewQuiz {
+  title: string;
+  kind: "pretest" | "posttest" | "quiz";
+  questions: { question: string; options: QuizOption[]; answer: string; explanation: string; source: string | null }[];
+  source_chat_id?: string | null;
+  source_message_id?: string | null;
+}

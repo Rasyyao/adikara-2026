@@ -50,14 +50,14 @@ export function createRouteGroups(services: Services, limits: Limits): RouteGrou
     // teacher (admins too): log in, see classes, run live sessions
     teacherAuthRoutes(services.teacher.auth, limits),
     teacherClassRoutes(services.teacher.classes),
-    teacherSessionRoutes(services.teacher.sessions),
+    teacherSessionRoutes(services.teacher.sessions, services.shared.quizzes),
     teacherChatRoutes(services.teacher.chats, limits.upload),
     // student: log in, join a live session
     studentAuthRoutes(services.student.auth, limits),
-    studentSessionRoutes(services.student.sessions, limits),
+    studentSessionRoutes(services.student.sessions, limits, services.shared.quizzes),
     // shared: used by more than one role
     sharedAuthRoutes(services.shared.profile),
-    sessionEventsRoutes(services.shared.sessionStream),
+    sessionEventsRoutes(services.shared.sessionStream, services.shared.liveBoard),
   ];
 }
 

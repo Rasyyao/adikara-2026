@@ -14,10 +14,10 @@ import { isUuid } from "@/lib/validation/auth";
 
 export const metadata = { title: "Sesi kelas" };
 
-// An AI reply that can hold a mindmap or a test; the other replies are not sent to the browser.
-const HOLDS_MATERIAL = /```(?:mindmap|assessment|json)|"nodes"|"questions"|[├└]──/;
+// An AI reply that can hold a mindmap, a test or a visualization; the other replies are not sent to the browser.
+const HOLDS_MATERIAL = /```(?:mindmap|assessment|json|visual)|"nodes"|"questions"|"(?:items|columns)"|[├└]──/;
 
-/** The assigned material for the whiteboard: its files and the replies with mindmaps and tests. A failure only means an empty panel. */
+/** The assigned material for the whiteboard: its files and the replies with mindmaps, tests and visualizations. A failure only means an empty panel. */
 async function loadMaterialInfo(token: string, material: { id: string; title: string } | null): Promise<BoardMaterialInfo | null> {
   if (!material) return null;
   try {
@@ -26,7 +26,7 @@ async function loadMaterialInfo(token: string, material: { id: string; title: st
       id: material.id,
       title: material.title,
       files: chat.materials.map((m) => ({ id: m.id, title: m.title, file_type: m.file_type })),
-      messages: messages.items.filter((m) => m.role === "ASSISTANT" && HOLDS_MATERIAL.test(m.content)).map((m) => m.content),
+      messages: messages.items.filter((m) => m.role === "ASSISTANT" && HOLDS_MATERIAL.test(m.content)).map((m) => ({ id: m.id, content: m.content })),
     };
   } catch {
     return { id: material.id, title: material.title, files: [], messages: [] };

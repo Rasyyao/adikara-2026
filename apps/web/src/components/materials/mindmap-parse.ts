@@ -2,6 +2,9 @@
 // server can use them without the Konva canvas.
 import type { MindmapNodeItem, MindmapPayload } from "./mindmap-layout";
 
+/** A flow diagram has `nodes` too, but with edges or a diagram type; it is a visual, not a mindmap. */
+const isVisualPayload = (p: Record<string, unknown>) => Array.isArray(p.edges) || (typeof p.type === "string" && /^(flow|flowchart|diagram|timeline|comparison)$/i.test(p.type));
+
 /**
  * Parses either a JSON mindmap payload (`{ title, nodes }`) OR an ASCII/markdown tree
  * into a normalized `MindmapPayload`. Returns `null` if the content is not a mindmap.
@@ -16,7 +19,7 @@ export function extractMindmapFromContent(content: string): {
   if (match) {
     try {
       const parsed = JSON.parse(match[1].trim());
-      if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length > 0) {
+      if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length > 0 && !isVisualPayload(parsed)) {
         const before = content.slice(0, match.index).trim();
         const after = content.slice(match.index + match[0].length).trim();
         return {
@@ -34,7 +37,7 @@ export function extractMindmapFromContent(content: string): {
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
     try {
       const parsed = JSON.parse(trimmed);
-      if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length > 0) {
+      if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length > 0 && !isVisualPayload(parsed)) {
         return {
           mindmap: normalizeMindmapObject(parsed),
           introText: "",
@@ -133,7 +136,8 @@ function parseAsciiTreeMindmap(content: string): {
     if (!branchMatch) return;
     const indent = branchMatch[1].length;
     const cleanLabel = branchMatch[2].replace(/\*\*+/g, "").trim();
-    if (!cleanLabel) return;
+    // ASCII art ("──┼──", arrows) is not a concept: a label needs a letter or a digit
+    if (!/[\p{L}\p{N}]/u.test(cleanLabel)) return;
 
     while (parentStack.length > 1 && parentStack[parentStack.length - 1].indent >= indent) {
       parentStack.pop();

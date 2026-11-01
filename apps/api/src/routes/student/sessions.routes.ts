@@ -5,12 +5,14 @@ import { parseJoinSession } from "../../http/validators/student/session.js";
 import type { StudentSessionService } from "../../services/student/session.service.js";
 import { errorDoc } from "../docs-helpers.js";
 import type { RouteGroup } from "../types.js";
+import { studentQuizRoutes } from "./quizzes.routes.js";
+import type { QuizService } from "../../services/shared/quiz.service.js";
 
-export function studentSessionRoutes(service: StudentSessionService, limits: { join: RequestHandler }): RouteGroup {
+export function studentSessionRoutes(service: StudentSessionService, limits: { join: RequestHandler }, quizzes: QuizService): RouteGroup {
   return {
     role: "student",
     feature: "sessions",
-    description: "Join the live session your teacher started, with its PIN.",
+    description: "Join the live session your teacher started, with its PIN, and take the quizzes the teacher puts on the board.",
     routes: [
       {
         method: "post",
@@ -35,6 +37,7 @@ export function studentSessionRoutes(service: StudentSessionService, limits: { j
           },
         },
       },
+      ...studentQuizRoutes(quizzes),
     ],
   };
 }

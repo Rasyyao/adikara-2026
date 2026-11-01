@@ -53,10 +53,20 @@ const TABLE: Record<string, [role: string, access: string]> = {
   "post /sessions/:id/end": ["teacher", "staff"],
   "delete /sessions/:id/participants/:studentId": ["teacher", "staff"],
   "get /sessions/:id/attendance": ["teacher", "staff"],
+  "post /sessions/:id/quizzes": ["teacher", "staff"],
+  "get /sessions/:id/quizzes": ["teacher", "staff"],
+  "post /sessions/:id/quizzes/:quizId/close": ["teacher", "staff"],
+  "get /sessions/:id/quizzes/:quizId/results": ["teacher", "staff"],
+  "get /sessions/:id/quizzes/:quizId/export": ["teacher", "staff"],
 
   "post /sessions/join": ["student", "student"],
+  "get /sessions/:id/quizzes/:quizId": ["student", "student"],
+  "post /sessions/:id/quizzes/:quizId/attempt": ["student", "student"],
+  "put /sessions/:id/quizzes/:quizId/attempt/answers": ["student", "student"],
+  "post /sessions/:id/quizzes/:quizId/attempt/submit": ["student", "student"],
 
   "get /sessions/:id/events": ["shared", "authenticated"],
+  "post /sessions/:id/live": ["shared", "authenticated"],
 };
 
 const routes = realRouteGroups().flatMap((g) => g.routes.map((r) => ({ role: g.role, ...r, name: `${r.method} ${r.path}` })));

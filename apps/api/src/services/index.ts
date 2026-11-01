@@ -8,6 +8,8 @@ import { createAdminTeacherService, type AdminTeacherService } from "./admin/tea
 import { createCredentialChecker } from "./shared/credentials.js";
 import { createProfileService, type ProfileService } from "./shared/profile.service.js";
 import { createSessionCore, type SessionOptions } from "./shared/session-core.js";
+import { createLiveBoardService, type LiveBoardService } from "./shared/live-board.service.js";
+import { createQuizService, type QuizService } from "./shared/quiz.service.js";
 import { createSessionStreamService, type SessionStreamService } from "./shared/session-stream.service.js";
 import { createStudentAuthService, type StudentAuthService } from "./student/auth.service.js";
 import { createStudentSessionService, type StudentSessionService } from "./student/session.service.js";
@@ -21,7 +23,7 @@ export interface Services {
   admin: { teachers: AdminTeacherService; students: AdminStudentService; classes: AdminClassService };
   teacher: { auth: TeacherAuthService; sessions: TeacherSessionService; classes: TeacherClassService; chats: TeacherChatService };
   student: { auth: StudentAuthService; sessions: StudentSessionService };
-  shared: { profile: ProfileService; sessionStream: SessionStreamService };
+  shared: { profile: ProfileService; sessionStream: SessionStreamService; liveBoard: LiveBoardService; quizzes: QuizService };
 }
 
 export interface ServiceOptions {
@@ -35,6 +37,11 @@ export async function createServices(repositories: Repositories, tokens: TokenSe
   const credentials = await createCredentialChecker(tokens, { bcryptCost: options.bcryptCost });
   // one core, so teacher, student and stream share the same hub, timers and rules
   const core = createSessionCore(repositories.shared.sessions, createEventHub(), options.session);
+  const liveBoard = createLiveBoardService(core, {
+    findBoard: (id) => repositories.teacher.sessions.findBoard(id),
+    saveBoard: (id, scene) => repositories.teacher.sessions.saveBoard(id, scene),
+    findTeacherName: async (id) => (await repositories.shared.profile.findTeacherById(id))?.name ?? null,
+  });
 
   return {
     admin: {
@@ -44,7 +51,7 @@ export async function createServices(repositories: Repositories, tokens: TokenSe
     },
     teacher: {
       auth: createTeacherAuthService(repositories.teacher.auth, credentials),
-      sessions: createTeacherSessionService(repositories.teacher.sessions, core),
+      sessions: createTeacherSessionService(repositories.teacher.sessions, core, liveBoard),
       classes: createTeacherClassService(repositories.teacher.classes),
       chats: createTeacherChatService(repositories.teacher.chats, options.storage ?? createObjectStorage(null)),
     },
@@ -54,7 +61,9 @@ export async function createServices(repositories: Repositories, tokens: TokenSe
     },
     shared: {
       profile: createProfileService(repositories.shared.profile),
-      sessionStream: createSessionStreamService(core),
+      sessionStream: createSessionStreamService(core, liveBoard),
+      liveBoard,
+      quizzes: createQuizService(core, repositories.shared.quizzes),
     },
   };
 }

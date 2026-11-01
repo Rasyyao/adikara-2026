@@ -5,9 +5,12 @@ import "katex/dist/katex.min.css";
 import {
   AlertCircle,
   ArrowLeft,
+  BookOpen,
   Check,
+  Code2,
   CheckCircle2,
   ClipboardList,
+  CircleHelp,
   Clock,
   Copy,
   Download,
@@ -15,6 +18,8 @@ import {
   FileText,
   FileUp,
   FolderOpen,
+  Lightbulb,
+  MousePointerClick,
   Network,
   PanelRightClose,
   PanelRightOpen,
@@ -24,6 +29,8 @@ import {
   Sparkles,
   Square,
   Trash2,
+  Wand2,
+  Workflow,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -55,6 +62,12 @@ import {
   replaceMindmapInContent,
   type MindmapPayload,
 } from "@/components/materials/mindmap-canvas";
+import { extractVisualFromContent, withoutVisualJson } from "@/components/session/board/visual";
+import { plain } from "@/components/session/board/markdown";
+import { answerIn, VisualAskProvider } from "@/components/session/board/visual-ask";
+import { VisualCard } from "@/components/session/board/visual-card";
+import { useSaveVisual } from "@/components/session/board/visual-library";
+import { displayPrompt, tracePrompt, visualPrompt } from "@/components/session/board/visual-prompts";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/loaders";
 import { useToast } from "@/components/ui/toast";
@@ -343,6 +356,12 @@ function getThinkingSteps(lastUser?: ChatMessageItem): string[] {
   const text = (lastUser?.content ?? "").toLowerCase();
   const hasFile = Boolean(lastUser?.attachment);
 
+  if (/^jelaskan (bagian|diagram|alur|linimasa|perbandingan)/.test(text)) {
+    return ["Thinking…", "Membaca bagian diagram yang dipilih…", "Mencari perumpamaan sehari-hari…", "Menyusun penjelasan sederhana…"];
+  }
+  if (/visualisasi|diagram alur/.test(text)) {
+    return ["Thinking…", "Memahami alur materi…", "Menyusun langkah dan percabangan…", "Menggambar diagram…"];
+  }
   if (/mind\s?map|peta konsep|peta pikiran/.test(text)) {
     return [
       "Thinking…",
@@ -536,10 +555,13 @@ function FormattedContent({
   content,
   onOpenMindmap,
   onOpenAssessment,
+  visualSave,
 }: {
   content: string;
   onOpenMindmap?: (mindmap: MindmapPayload) => void;
   onOpenAssessment?: () => void;
+  /** Saves the reply's visual for class; given only for a reply stored on the server. */
+  visualSave?: { saving: boolean; onToggle: (saved: boolean) => void };
 }) {
   const extractedAssessment = extractAssessmentsFromContent(content);
   if (extractedAssessment) {
@@ -578,6 +600,19 @@ function FormattedContent({
       </div>
     );
   }
+  const extractedVisual = extractVisualFromContent(content);
+  if (extractedVisual) {
+    return (
+      <div className="flex flex-col gap-3 text-body text-ink">
+        {extractedVisual.introText && <FormattedContent content={extractedVisual.introText} />}
+        <VisualCard
+          visual={extractedVisual.visual}
+          save={visualSave && { saved: extractedVisual.saved, saving: visualSave.saving, onToggle: () => visualSave.onToggle(extractedVisual.saved) }}
+        />
+        {extractedVisual.outroText && <FormattedContent content={extractedVisual.outroText} />}
+      </div>
+    );
+  }
   const extractedMindmap = extractMindmapFromContent(content);
   if (extractedMindmap) {
     return (
@@ -612,7 +647,7 @@ function FormattedContent({
   }
 
   // Normalize multi-line $$ ... $$ blocks onto single $$ ... $$ lines outside fenced code blocks
-  const segments = content.split(/(```[\s\S]*?```)/g);
+  const segments = withoutVisualJson(content).split(/(```[\s\S]*?```)/g);
 
   return (
     <div className="flex flex-col gap-3 text-body text-ink">
@@ -638,7 +673,7 @@ function FormattedContent({
           paragraphBuffer = [];
           if (!text) return;
           nodes.push(
-            <p key={key} className="whitespace-pre-line leading-relaxed text-ink">
+            <p key={key} className="whitespace-pre-line leading-7 text-ink">
               <FormattedInline text={text} />
             </p>,
           );
@@ -653,7 +688,7 @@ function FormattedContent({
           nodes.push(
             <ListTag
               key={key}
-              className={`flex flex-col gap-2 pl-5 text-body text-ink ${ordered ? "list-decimal" : "list-disc"}`}
+              className={`flex flex-col gap-2 pl-6 text-body leading-7 text-ink marker:font-semibold marker:text-primary ${ordered ? "list-decimal" : "list-disc"}`}
             >
               {items.map((item, itemIdx) => (
                 <li
@@ -689,7 +724,7 @@ function FormattedContent({
             flushList(`${segIdx}-list-${lineIdx}`);
             const cleanHeading = headingMatch[2].trim().replace(/^\*\*([\s\S]+)\*\*$/, "$1");
             nodes.push(
-              <h3 key={`${segIdx}-h-${lineIdx}`} className="pt-1 text-h3 font-semibold text-ink">
+              <h3 key={`${segIdx}-h-${lineIdx}`} className="mt-2 border-l-4 border-primary pl-3 text-h3 font-semibold text-ink">
                 <FormattedInline text={cleanHeading} />
               </h3>,
             );
@@ -896,6 +931,47 @@ function SourceViewer({ chatId, source, onClose }: { chatId: string; source: Mat
 }
 
 /** The right panel (mindmap, questions) starts at half the screen; dragging its edge left widens it, the chat gets the rest. */
+/** The three steps a teacher new to the tool follows, shown on an empty conversation. */
+const GETTING_STARTED = [
+  { Icon: FileUp, title: "Unggah berkas materi", text: "Modul, buku, atau slide yang biasa Anda pakai (PDF, DOCX, PPTX)." },
+  { Icon: Sparkles, title: "Minta AI menyiapkan", text: "Ringkasan, diagram alur, simulasi kode, mindmap, atau soal, cukup dengan satu klik." },
+  { Icon: MousePointerClick, title: "Pakai saat mengajar", text: "Klik bagian diagram untuk penjelasan AI, lalu bawa ke papan tulis kelas." },
+];
+
+const STARTER_ICONS = [BookOpen, ClipboardList, Lightbulb, CircleHelp];
+const STARTERS = [
+  {
+    Icon: Workflow,
+    title: "Gambarkan alur materi jadi diagram",
+    description: "Diagram langkah demi langkah yang bisa diklik dan dijelaskan AI",
+    prompt: visualPrompt("materi ini"),
+  },
+  {
+    Icon: Code2,
+    title: "Simulasikan kode dengan perumpamaan",
+    description: "Kode berjalan baris demi baris, variabel tampil sebagai kotak yang isinya berganti",
+    prompt: tracePrompt("konsep pemrograman utama di materi ini, misalnya cara variabel diisi lalu ditimpa nilainya"),
+  },
+  ...STARTER_PROMPTS.map((item, index) => ({ ...item, Icon: STARTER_ICONS[index % STARTER_ICONS.length] })),
+];
+
+/** One-click requests above the message box, for a teacher who does not know what to type. */
+const QUICK_ACTIONS = [
+  { id: "summary", label: "Ringkas materi", Icon: BookOpen },
+  { id: "flow", label: "Buat diagram alur", Icon: Workflow },
+  { id: "trace", label: "Simulasi kode", Icon: Code2 },
+  { id: "mindmap", label: "Buat mindmap", Icon: Network },
+  { id: "test", label: "Buat soal", Icon: ClipboardList },
+  { id: "simpler", label: "Jelaskan lebih sederhana", Icon: Wand2 },
+] as const;
+
+const SIMPLER_LAST =
+  "Tolong jelaskan ulang jawaban terakhir dengan bahasa yang lebih sederhana untuk guru yang masih awam pemrograman, dengan satu perumpamaan sehari-hari.";
+
+/** Whether an answer is plain text, so it can still be turned into a diagram or simplified. */
+const isPlainAnswer = (content: string) =>
+  !extractVisualFromContent(content) && !extractMindmapFromContent(content) && !extractAssessmentsFromContent(content);
+
 const MINDMAP_DEFAULT_PCT = 50;
 const MINDMAP_MAX_PCT = 70;
 const MINDMAP_MIN_PCT = 25;
@@ -934,6 +1010,7 @@ export function MaterialChatbot({
   const [title, setTitle] = useState(initialMaterial?.title ?? "Materi kelas baru");
   const [sources, setSources] = useState<MaterialSource[]>(initialMaterial?.sources ?? []);
   const [messages, setMessages] = useState<ChatMessageItem[]>(initialMaterial?.messages ?? []);
+  const visualSaver = useSaveVisual(chatId, (saved) => setMessages((prev) => prev.map((m) => (m.id === saved.id ? { ...m, content: saved.content } : m))));
   const [stagedFile, setStagedFile] = useState<MaterialSource | null>(null);
   const [rawFile, setRawFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(100);
@@ -1232,10 +1309,11 @@ export function MaterialChatbot({
     if (file) attachFile(file);
   }
 
-  async function submitMessage(customPrompt?: string) {
-    if (thinking) return;
+  /** Sends the prompt (or `customPrompt`); resolves to the id of the sent message, or null when nothing was sent. */
+  async function submitMessage(customPrompt?: string): Promise<string | null> {
+    if (thinking) return null;
     const text = (customPrompt ?? prompt).trim();
-    if (!text && !stagedFile) return;
+    if (!text && !stagedFile) return null;
 
     if (uploadTimerRef.current) clearInterval(uploadTimerRef.current);
     setUploadProgress(100);
@@ -1278,7 +1356,7 @@ export function MaterialChatbot({
     if (!result.ok) {
       setThinking(false);
       toast.error(result.message);
-      return;
+      return null;
     }
 
     if (!chatId) {
@@ -1307,6 +1385,7 @@ export function MaterialChatbot({
       stopRequestedRef.current = false;
       void stopChatReplyAction(result.chat.id);
     }
+    return result.message.id;
   }
 
   /** Stops waiting for the AI and cancels the reply that is being written. */
@@ -1390,707 +1469,799 @@ export function MaterialChatbot({
     void submitMessage(`Tolong buatkan ${request} pilihan ganda dari materi ${targetLabel}.`);
   }
 
+  function runQuickAction(id: (typeof QUICK_ACTIONS)[number]["id"]) {
+    if (id === "mindmap") return handleGenerateMindmap();
+    if (id === "test") return handleGenerateAssessment("pretest");
+    const text = {
+      summary: "Tolong ringkas materi ini dalam poin-poin singkat yang mudah dijelaskan di kelas.",
+      flow: visualPrompt(""),
+      trace: tracePrompt(""),
+      simpler: SIMPLER_LAST,
+    }[id];
+    void submitMessage(text);
+  }
+
   const widePanel = activeTab === "mindmap" || activeTab === "assessment";
 
   return (
-    <div
-      onDragOver={(event) => {
-        event.preventDefault();
-        setDragging(true);
+    <VisualAskProvider
+      value={{
+        ask: (text) => submitMessage(text),
+        answerTo: (id) => answerIn(messages, id, thinking),
+        busy: thinking || isSending,
+        render: (content) => <FormattedContent content={content} />,
       }}
-      onDragLeave={(event) => {
-        if (event.currentTarget.contains(event.relatedTarget as Node)) return;
-        setDragging(false);
-      }}
-      onDrop={handleDrop}
-      /* Bleeds edge-to-edge inside DashboardShell's <main> (-mx-4 -my-6 sm:-mx-8) with a full-screen white surface */
-      className="relative -mx-4 -my-6 flex h-[calc(100dvh-4rem)] flex-col overflow-hidden border-t border-border bg-surface sm:-mx-8 lg:border-l"
     >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf,.docx,.pptx"
-        onChange={handleFileChange}
-        className="sr-only"
-        aria-label="Unggah berkas materi PDF, DOCX, atau PPTX"
-      />
+      <div
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+          setDragging(false);
+        }}
+        onDrop={handleDrop}
+        /* Bleeds edge-to-edge inside DashboardShell's <main> (-mx-4 -my-6 sm:-mx-8) with a full-screen white surface */
+        className="relative -mx-4 -my-6 flex h-[calc(100dvh-4rem)] flex-col overflow-hidden border-t border-border bg-surface sm:-mx-8 lg:border-l"
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.pptx"
+          onChange={handleFileChange}
+          className="sr-only"
+          aria-label="Unggah berkas materi PDF, DOCX, atau PPTX"
+        />
 
-      {dragging && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-primary bg-primary-tint/95 p-6 text-center"
-        >
-          <span className="upload-check-pop flex size-14 items-center justify-center rounded-full bg-surface text-primary">
-            <FileUp size={28} strokeWidth={1.75} />
-          </span>
-          <p className="text-h1 font-semibold text-primary">Lepaskan berkas untuk mengunggah materi</p>
-          <p className="text-body text-ink">Mendukung PDF, DOCX, atau PPTX hingga 20 MB</p>
-        </div>
-      )}
-
-      {/* Full-width top bar on the white canvas */}
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2.5 sm:px-8">
-        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-          <Link
-            href="/teacher/materials"
-            className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-small font-semibold text-muted transition-colors duration-150 ease-out hover:bg-bg hover:text-ink"
+        {dragging && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-primary bg-primary-tint/95 p-6 text-center"
           >
-            <ArrowLeft size={20} strokeWidth={1.75} aria-hidden="true" />
-            <span className="hidden sm:inline">Materi</span>
-          </Link>
-
-          <span className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
-
-          <div className="min-w-0 flex-1">
-            <label htmlFor={titleInputId} className="sr-only">
-              Judul materi
-            </label>
-            <input
-              id={titleInputId}
-              type="text"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              className="focus-bare w-full truncate rounded-sm bg-transparent px-2 py-1 font-heading text-h3 font-semibold text-ink outline-none hover:bg-bg focus:bg-bg"
-              placeholder="Judul materi kelas…"
-            />
+            <span className="upload-check-pop flex size-14 items-center justify-center rounded-full bg-surface text-primary">
+              <FileUp size={28} strokeWidth={1.75} />
+            </span>
+            <p className="text-h1 font-semibold text-primary">Lepaskan berkas untuk mengunggah materi</p>
+            <p className="text-body text-ink">Mendukung PDF, DOCX, atau PPTX hingga 20 MB</p>
           </div>
-        </div>
+        )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={resetNewChat}
-            title="Mulai materi baru"
-            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:bg-bg"
+        {/* Full-width top bar on the white canvas */}
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2.5 sm:px-8">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+            <Link
+              href="/teacher/materials"
+              className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-small font-semibold text-muted transition-colors duration-150 ease-out hover:bg-bg hover:text-ink"
+            >
+              <ArrowLeft size={20} strokeWidth={1.75} aria-hidden="true" />
+              <span className="hidden sm:inline">Materi</span>
+            </Link>
+
+            <span className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+
+            <div className="min-w-0 flex-1">
+              <label htmlFor={titleInputId} className="sr-only">
+                Judul materi
+              </label>
+              <input
+                id={titleInputId}
+                type="text"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className="focus-bare w-full truncate rounded-sm bg-transparent px-2 py-1 font-heading text-h3 font-semibold text-ink outline-none hover:bg-bg focus:bg-bg"
+                placeholder="Judul materi kelas…"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={resetNewChat}
+              title="Mulai materi baru"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:bg-bg"
+            >
+              <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
+              <span className="hidden sm:inline">Baru</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((open) => !open)}
+              aria-expanded={sidebarOpen}
+              title={sidebarOpen ? "Sembunyikan sidebar kanan" : "Buka sidebar kanan"}
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:bg-bg lg:hidden"
+            >
+              {sidebarOpen ? (
+                <PanelRightClose size={20} strokeWidth={1.75} aria-hidden="true" />
+              ) : (
+                <PanelRightOpen size={20} strokeWidth={1.75} aria-hidden="true" />
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* Main full-screen body: splits 50/50 when Mindmap tab is open in the right sidebar */}
+        <div className="flex min-h-0 flex-1 overflow-hidden bg-surface">
+          <section
+            aria-label="Percakapan asisten AI"
+            style={sidebarOpen && widePanel ? ({ "--panel-w": `${mindmapWidthPct}%` } as CSSProperties) : undefined}
+            className={`flex min-w-0 flex-col overflow-hidden bg-surface ${isResizingSidebar ? "" : "transition-[width] duration-200"} ${
+              sidebarOpen && widePanel ? "w-full lg:w-[calc(100%-var(--panel-w))] lg:flex-none" : "flex-1"
+            }`}
           >
-            <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
-            <span className="hidden sm:inline">Baru</span>
-          </button>
+            {/* Scrollable middle area with wider max-w-5xl reading & chat column */}
+            <div ref={scrollAreaRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-8">
+              {messages.length === 0 ? (
+                <div className="mx-auto my-auto flex w-full max-w-4xl flex-col gap-7 py-2">
+                  <div className="flex flex-col gap-2">
+                    <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-primary-tint px-3 py-1 text-caption font-semibold text-primary">
+                      <Sparkles size={16} strokeWidth={1.75} aria-hidden="true" />
+                      Asisten AI Guru
+                    </span>
+                    <h1 className="text-display font-semibold text-ink">Materi apa yang ingin Anda siapkan hari ini?</h1>
+                    <p className="max-w-2xl text-body leading-7 text-muted">
+                      Tidak perlu paham hal teknis. Ikuti tiga langkah di bawah, atau langsung pilih salah satu contoh perintah.
+                    </p>
+                  </div>
 
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((open) => !open)}
-            aria-expanded={sidebarOpen}
-            title={sidebarOpen ? "Sembunyikan sidebar kanan" : "Buka sidebar kanan"}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:bg-bg lg:hidden"
-          >
-            {sidebarOpen ? (
-              <PanelRightClose size={20} strokeWidth={1.75} aria-hidden="true" />
-            ) : (
-              <PanelRightOpen size={20} strokeWidth={1.75} aria-hidden="true" />
-            )}
-          </button>
-        </div>
-      </header>
-
-      {/* Main full-screen body: splits 50/50 when Mindmap tab is open in the right sidebar */}
-      <div className="flex min-h-0 flex-1 overflow-hidden bg-surface">
-        <section
-          aria-label="Percakapan asisten AI"
-          style={sidebarOpen && widePanel ? ({ "--panel-w": `${mindmapWidthPct}%` } as CSSProperties) : undefined}
-          className={`flex min-w-0 flex-col overflow-hidden bg-surface ${isResizingSidebar ? "" : "transition-[width] duration-200"} ${
-            sidebarOpen && widePanel ? "w-full lg:w-[calc(100%-var(--panel-w))] lg:flex-none" : "flex-1"
-          }`}
-        >
-          {/* Scrollable middle area with wider max-w-5xl reading & chat column */}
-          <div ref={scrollAreaRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-8">
-            {messages.length === 0 ? (
-              <div className="mx-auto my-auto flex w-full max-w-5xl flex-col gap-5 py-2">
-                <div className="flex flex-col gap-2">
-                  <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-primary-tint px-3 py-1 text-caption font-semibold text-primary">
-                    <Sparkles size={16} strokeWidth={1.75} aria-hidden="true" />
-                    Asisten AI Guru
-                  </span>
-                  <h1 className="text-display font-semibold text-ink">
-                    Materi apa yang ingin Anda susun hari ini?
-                  </h1>
-                  <p className="text-body text-muted">
-                    Unggah berkas PDF, DOCX, atau PPTX melalui tombol di bawah, atau pilih salah satu perintah cepat untuk mulai menyusun bahan ajar.
-                  </p>
-                </div>
-
-                {/* Wide 2x2 starter prompt grid */}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {STARTER_PROMPTS.map((item) => (
-                    <button
-                      key={item.title}
-                      type="button"
-                      onClick={() => void submitMessage(item.prompt)}
-                      className="flex flex-col items-start gap-1 rounded-lg border border-border bg-bg p-4 text-left transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint"
-                    >
-                      <span className="text-body font-semibold text-ink">{item.title}</span>
-                      <span className="text-small text-muted">{item.description}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              /* Wide conversation stream (max-w-5xl) */
-              <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 py-2">
-                {messages.map((message) =>
-                  message.role === "USER" ? (
-                    <article
-                      key={message.id}
-                      aria-label="Pesan Anda"
-                      className="chat-item-in ml-auto flex max-w-[90%] flex-col items-end gap-2 sm:max-w-[78%]"
-                    >
-                      {message.attachment && (
-                        <div className="inline-flex max-w-xs items-center gap-2 rounded-md border border-border bg-bg px-3 py-1.5">
-                          <FileText size={16} strokeWidth={1.75} className="shrink-0 text-primary" aria-hidden="true" />
-                          <span className="truncate text-small font-medium text-ink">{message.attachment.title}</span>
-                        </div>
-                      )}
-                      <div className="rounded-lg bg-primary-tint px-4 py-3 text-body text-ink">
-                        <p className="whitespace-pre-wrap">{message.content}</p>
-                      </div>
-                      <span className="text-caption text-muted">Anda · {message.createdAt}</span>
-                    </article>
-                  ) : (
-                    <article
-                      key={message.id}
-                      aria-label="Balasan asisten AI"
-                      className="chat-item-in flex w-full gap-3"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-tint text-primary"
-                      >
-                        <Sparkles size={16} strokeWidth={1.75} />
-                      </span>
-                      <div className="flex min-w-0 flex-1 flex-col gap-2">
-
-                      <FormattedContent
-                        content={message.content}
-                        onOpenMindmap={(mm) => {
-                          setCustomMindmap(mm);
-                          setCustomMindmapMsgId(message.id);
-                          setActiveTab("mindmap");
-                          setSidebarOpen(true);
-                        }}
-                        onOpenAssessment={() => {
-                          setOpenAssessmentMsgId(message.id);
-                          setOpenAssessmentKind(null);
-                          setActiveTab("assessment");
-                          setSidebarOpen(true);
-                        }}
-                      />
-
-                      <footer className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void copyMessage(message.id, message.content)}
-                          aria-label={copiedId === message.id ? "Tersalin" : "Salin teks"}
-                          title={copiedId === message.id ? "Tersalin" : "Salin teks"}
-                          className="inline-flex size-8 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-out hover:bg-bg hover:text-primary"
-                        >
-                          {copiedId === message.id ? (
-                            <Check size={15} strokeWidth={1.75} aria-hidden="true" />
-                          ) : (
-                            <Copy size={15} strokeWidth={1.75} aria-hidden="true" />
+                  <ol className="grid gap-3 sm:grid-cols-3">
+                    {GETTING_STARTED.map((item, index) => (
+                      <li key={item.title} className="flex gap-3 rounded-lg border border-border bg-surface p-4">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-small font-bold text-white">{index + 1}</span>
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-1.5 text-body font-semibold text-ink">
+                            <item.Icon size={16} strokeWidth={1.75} className="text-primary" aria-hidden="true" />
+                            {item.title}
+                          </p>
+                          <p className="mt-0.5 text-small leading-6 text-muted">{item.text}</p>
+                          {index === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-primary px-3 text-caption font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+                            >
+                              <Paperclip size={14} strokeWidth={1.75} aria-hidden="true" />
+                              Pilih berkas
+                            </button>
                           )}
-                        </button>
-                        <span className="text-caption text-muted">{message.createdAt}</span>
-                        {message.sources && message.sources.length > 0 && (
-                          <span className="inline-flex items-center gap-1 text-caption text-muted">
-                            <FileText size={13} strokeWidth={1.75} aria-hidden="true" />
-                            {message.sources.every((s) => isUuid(s))
-                              ? `${message.sources.length} bagian materi`
-                              : message.sources.join(", ")}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+
+                  <div className="flex flex-col gap-3">
+                    <p className="text-small font-semibold text-ink">Atau mulai dengan salah satu ini:</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {STARTERS.map((item) => (
+                        <button
+                          key={item.title}
+                          type="button"
+                          onClick={() => void submitMessage(item.prompt)}
+                          className="group flex items-start gap-3 rounded-lg border border-border bg-bg p-4 text-left transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint"
+                        >
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-surface text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+                            <item.Icon size={18} strokeWidth={1.75} aria-hidden="true" />
                           </span>
-                        )}
-                      </footer>
-                      </div>
-                    </article>
-                  ),
-                )}
-
-                {thinking && (
-                  <ContextualThinking
-                    key={messages.length}
-                    steps={getThinkingSteps(
-                      [...messages].reverse().find((m) => m.role === "USER"),
-                    )}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Docked bottom prompt composer (wide max-w-5xl, pinned to bottom of white screen, no top hr) */}
-          <div className="shrink-0 bg-surface px-4 pb-4 pt-2 sm:px-8">
-            <form onSubmit={handleFormSubmit} className="mx-auto w-full max-w-5xl">
-              <div className="rounded-lg border border-border bg-bg px-4 py-3 transition-colors duration-150 ease-out focus-within:border-primary">
-                {/* Compact inline file pill inside the textbox showing only the file name */}
-                {stagedFile && (
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <div className="chat-item-in inline-flex max-w-xs items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
-                      {isUploadingFile ? (
-                        <Spinner size={16} />
-                      ) : (
-                        <FileText size={16} strokeWidth={1.75} className="upload-check-pop shrink-0 text-primary" aria-hidden="true" />
-                      )}
-                      <span className="truncate text-small font-medium text-ink" title={stagedFile.title}>
-                        {stagedFile.title}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (uploadTimerRef.current) clearInterval(uploadTimerRef.current);
-                          setStagedFile(null);
-                          setRawFile(null);
-                          setUploadProgress(100);
-                        }}
-                        aria-label={`Batal melampirkan ${stagedFile.title}`}
-                        className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-sm text-muted transition-colors duration-150 ease-out hover:bg-bg hover:text-ink"
-                      >
-                        <X size={14} strokeWidth={1.75} aria-hidden="true" />
-                      </button>
+                          <span className="min-w-0">
+                            <span className="block text-body font-semibold text-ink">{item.title}</span>
+                            <span className="mt-0.5 block text-small leading-6 text-muted">{item.description}</span>
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   </div>
-                )}
+                </div>
+              ) : (
+                /* Wide conversation stream (max-w-5xl) */
+                <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 py-2">
+                  {messages.map((message) =>
+                    message.role === "USER" ? (
+                      <article
+                        key={message.id}
+                        aria-label="Pesan Anda"
+                        className="chat-item-in ml-auto flex max-w-[90%] flex-col items-end gap-2 sm:max-w-[78%]"
+                      >
+                        {message.attachment && (
+                          <div className="inline-flex max-w-xs items-center gap-2 rounded-md border border-border bg-bg px-3 py-1.5">
+                            <FileText size={16} strokeWidth={1.75} className="shrink-0 text-primary" aria-hidden="true" />
+                            <span className="truncate text-small font-medium text-ink">{message.attachment.title}</span>
+                          </div>
+                        )}
+                        <div className="rounded-lg bg-primary-tint px-4 py-3 text-body text-ink">
+                          <p className="whitespace-pre-wrap leading-7">{displayPrompt(message.content)}</p>
+                        </div>
+                        <span className="text-caption text-muted">Anda · {message.createdAt}</span>
+                      </article>
+                    ) : (
+                      <article
+                        key={message.id}
+                        aria-label="Balasan asisten AI"
+                        className="chat-item-in flex w-full gap-3"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-tint text-primary"
+                        >
+                          <Sparkles size={16} strokeWidth={1.75} />
+                        </span>
+                        <div className="flex min-w-0 max-w-4xl flex-1 flex-col gap-2">
+                        <p className="text-caption font-semibold text-muted">Asisten AI</p>
 
-                <label htmlFor={promptInputId} className="sr-only">
-                  Pesan untuk asisten AI
-                </label>
-                <textarea
-                  id={promptInputId}
-                  ref={textareaRef}
-                  rows={2}
-                  value={prompt}
-                  onChange={(event) => {
-                    setPrompt(event.target.value);
-                    adjustTextareaHeight();
-                  }}
-                  onKeyDown={handleTextareaKeyDown}
-                  placeholder="Tanyakan sesuatu, atau minta AI membuat bahan ajar & soal dari berkas Anda… (Tekan Enter untuk kirim)"
-                  className="focus-bare block max-h-36 min-h-[48px] w-full resize-none bg-transparent px-1 py-1 text-body text-ink outline-none placeholder:text-muted"
-                />
+                        <FormattedContent
+                          content={message.content}
+                          onOpenMindmap={(mm) => {
+                            setCustomMindmap(mm);
+                            setCustomMindmapMsgId(message.id);
+                            setActiveTab("mindmap");
+                            setSidebarOpen(true);
+                          }}
+                          onOpenAssessment={() => {
+                            setOpenAssessmentMsgId(message.id);
+                            setOpenAssessmentKind(null);
+                            setActiveTab("assessment");
+                            setSidebarOpen(true);
+                          }}
+                          visualSave={isUuid(message.id) ? { saving: visualSaver.savingId === message.id, onToggle: (saved) => void visualSaver.toggle(message, saved) } : undefined}
+                        />
 
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pt-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint hover:text-primary"
-                    >
-                      <Paperclip size={20} strokeWidth={1.75} aria-hidden="true" />
-                      <span>Unggah materi</span>
-                    </button>
-                  </div>
+                        <footer className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void copyMessage(message.id, message.content)}
+                            aria-label={copiedId === message.id ? "Tersalin" : "Salin teks"}
+                            title={copiedId === message.id ? "Tersalin" : "Salin teks"}
+                            className="inline-flex size-8 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-out hover:bg-bg hover:text-primary"
+                          >
+                            {copiedId === message.id ? (
+                              <Check size={15} strokeWidth={1.75} aria-hidden="true" />
+                            ) : (
+                              <Copy size={15} strokeWidth={1.75} aria-hidden="true" />
+                            )}
+                          </button>
+                          <span className="text-caption text-muted">{message.createdAt}</span>
+                          {isPlainAnswer(message.content) && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={thinking}
+                                onClick={() => void submitMessage(visualPrompt(plain(message.content).slice(0, 240)))}
+                                className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-caption font-semibold text-primary transition-colors hover:bg-primary-tint disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Workflow size={14} strokeWidth={1.75} aria-hidden="true" />
+                                Jadikan diagram
+                              </button>
+                              <button
+                                type="button"
+                                disabled={thinking}
+                                onClick={() => void submitMessage(SIMPLER_LAST)}
+                                className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-caption font-semibold text-primary transition-colors hover:bg-primary-tint disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Wand2 size={14} strokeWidth={1.75} aria-hidden="true" />
+                                Sederhanakan
+                              </button>
+                            </>
+                          )}
+                          {message.sources && message.sources.length > 0 && (
+                            <span className="inline-flex items-center gap-1 text-caption text-muted">
+                              <FileText size={13} strokeWidth={1.75} aria-hidden="true" />
+                              {message.sources.every((s) => isUuid(s))
+                                ? `${message.sources.length} bagian materi`
+                                : message.sources.join(", ")}
+                            </span>
+                          )}
+                        </footer>
+                        </div>
+                      </article>
+                    ),
+                  )}
 
-                  {thinking && !isSending ? (
-                    <Button type="button" variant="secondary" onClick={() => void stopReply()} aria-label="Hentikan balasan AI">
-                      <Square size={16} strokeWidth={1.75} fill="currentColor" aria-hidden="true" />
-                      Berhenti
-                    </Button>
-                  ) : (
-                    <Button
-                      type="submit"
-                      loading={isSending || isUploadingFile}
-                      disabled={isSending || isUploadingFile || (!prompt.trim() && !stagedFile)}
-                    >
-                      {!(isSending || isUploadingFile) && <Send size={20} strokeWidth={1.75} aria-hidden="true" />}
-                      {isUploadingFile ? "Mengunggah…" : isSending ? "Mengirim…" : "Kirim"}
-                    </Button>
+                  {thinking && (
+                    <ContextualThinking
+                      key={messages.length}
+                      steps={getThinkingSteps(
+                        [...messages].reverse().find((m) => m.role === "USER"),
+                      )}
+                    />
                   )}
                 </div>
-              </div>
-            </form>
-          </div>
-        </section>
-
-        {/* NotebookLM-style Right Studio Sidebar: collapsible rail + extensible feature tabs */}
-        {sidebarOpen ? (
-          <aside
-            ref={sidebarRef}
-            aria-label="Sidebar Studio & Materi"
-            style={widePanel ? ({ "--mindmap-w": `${mindmapWidthPct}%` } as CSSProperties) : undefined}
-            className={`fixed inset-y-16 right-0 z-20 flex max-w-full shrink-0 flex-col overflow-hidden border-l border-border bg-surface shadow-[var(--shadow-overlay)] lg:relative lg:inset-y-0 lg:z-auto lg:shadow-none ${
-              isResizingSidebar ? "" : "transition-[width] duration-200"
-            } ${widePanel ? "w-full lg:w-[var(--mindmap-w)]" : "w-80 sm:w-96"}`}
-          >
-            {/* Drag the left edge to change the mindmap width (desktop only, at most half of the screen) */}
-            {widePanel && (
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Ubah lebar mindmap"
-                aria-valuemin={MINDMAP_MIN_PCT}
-                aria-valuemax={MINDMAP_MAX_PCT}
-                aria-valuenow={Math.round(mindmapWidthPct)}
-                tabIndex={0}
-                title="Geser untuk mengubah lebar · klik 2x untuk mengembalikan"
-                onPointerDown={(event) => {
-                  if (event.button !== 0) return;
-                  event.preventDefault();
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  resizingRef.current = true;
-                  setIsResizingSidebar(true);
-                }}
-                onPointerMove={(event) => {
-                  if (!resizingRef.current) return;
-                  // the button was released somewhere we did not hear about: end the drag instead of following the mouse
-                  if (event.buttons === 0) return stopResizing();
-                  resizeSidebarTo(event.clientX);
-                }}
-                onPointerUp={stopResizing}
-                onPointerCancel={stopResizing}
-                onLostPointerCapture={stopResizing}
-                onDoubleClick={() => setMindmapWidthPct(MINDMAP_DEFAULT_PCT)}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowLeft") {
-                    event.preventDefault();
-                    setMindmapWidthPct((w) => clampMindmapWidth(w + 2));
-                  } else if (event.key === "ArrowRight") {
-                    event.preventDefault();
-                    setMindmapWidthPct((w) => clampMindmapWidth(w - 2));
-                  }
-                }}
-                className={`absolute inset-y-0 left-0 z-10 hidden w-3 cursor-col-resize touch-none select-none transition-colors hover:bg-primary/30 focus-visible:bg-primary/40 lg:block ${
-                  isResizingSidebar ? "bg-primary/40" : ""
-                }`}
-              />
-            )}
-            {/* NotebookLM-style Sidebar Tab Bar */}
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
-              <nav aria-label="Menu fitur materi" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-                {SIDEBAR_TABS.map((tab) => {
-                  const isActive = activeTab === tab.id;
-                  const TabIcon = tab.Icon;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setActiveTab(tab.id)}
-                      aria-current={isActive ? "page" : undefined}
-                      className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-caption font-semibold transition-colors ${
-                        isActive
-                          ? "bg-primary text-white"
-                          : "text-muted hover:bg-bg hover:text-ink"
-                      }`}
-                    >
-                      <TabIcon size={15} strokeWidth={1.75} aria-hidden="true" />
-                      <span>{tab.label}</span>
-                      {tab.id === "sources" && (
-                        <span
-                          className={`rounded-full px-1.5 py-0.2 text-[11px] font-semibold ${
-                            isActive ? "bg-white/20 text-white" : "bg-bg text-muted"
-                          }`}
-                        >
-                          {sources.length}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </nav>
-
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(false)}
-                title="Lipat sidebar kanan"
-                aria-label="Lipat sidebar kanan"
-                className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg hover:text-ink"
-              >
-                <PanelRightClose size={18} strokeWidth={1.75} aria-hidden="true" />
-              </button>
+              )}
             </div>
 
-            {activeTab === "sources" ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-                <div>
-                  <h2 className="text-h3 font-semibold text-ink">Sumber materi</h2>
-                  <p className="text-caption text-muted">Berkas referensi pada percakapan ini.</p>
+            {/* Docked bottom prompt composer (wide max-w-5xl, pinned to bottom of white screen, no top hr) */}
+            <div className="shrink-0 bg-surface px-4 pb-4 pt-2 sm:px-8">
+              <form onSubmit={handleFormSubmit} className="mx-auto w-full max-w-5xl">
+                {messages.length > 0 && (
+                  <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Aksi cepat">
+                    {QUICK_ACTIONS.map((action) => (
+                      <button
+                        key={action.label}
+                        type="button"
+                        disabled={thinking || isUploadingFile}
+                        onClick={() => runQuickAction(action.id)}
+                        className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold text-ink transition-colors hover:border-primary hover:bg-primary-tint hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <action.Icon size={14} strokeWidth={1.75} aria-hidden="true" />
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="rounded-lg border border-border bg-bg px-4 py-3 transition-colors duration-150 ease-out focus-within:border-primary">
+                  {/* Compact inline file pill inside the textbox showing only the file name */}
+                  {stagedFile && (
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <div className="chat-item-in inline-flex max-w-xs items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
+                        {isUploadingFile ? (
+                          <Spinner size={16} />
+                        ) : (
+                          <FileText size={16} strokeWidth={1.75} className="upload-check-pop shrink-0 text-primary" aria-hidden="true" />
+                        )}
+                        <span className="truncate text-small font-medium text-ink" title={stagedFile.title}>
+                          {stagedFile.title}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (uploadTimerRef.current) clearInterval(uploadTimerRef.current);
+                            setStagedFile(null);
+                            setRawFile(null);
+                            setUploadProgress(100);
+                          }}
+                          aria-label={`Batal melampirkan ${stagedFile.title}`}
+                          className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-sm text-muted transition-colors duration-150 ease-out hover:bg-bg hover:text-ink"
+                        >
+                          <X size={14} strokeWidth={1.75} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <label htmlFor={promptInputId} className="sr-only">
+                    Pesan untuk asisten AI
+                  </label>
+                  <textarea
+                    id={promptInputId}
+                    ref={textareaRef}
+                    rows={2}
+                    value={prompt}
+                    onChange={(event) => {
+                      setPrompt(event.target.value);
+                      adjustTextareaHeight();
+                    }}
+                    onKeyDown={handleTextareaKeyDown}
+                    placeholder="Tulis pertanyaan dengan bahasa sehari-hari, misalnya: jelaskan perulangan untuk siswa kelas X"
+                    className="focus-bare block max-h-36 min-h-[48px] w-full resize-none bg-transparent px-1 py-1 text-body text-ink outline-none placeholder:text-muted"
+                  />
+
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint hover:text-primary"
+                      >
+                        <Paperclip size={20} strokeWidth={1.75} aria-hidden="true" />
+                        <span>Unggah materi</span>
+                      </button>
+                      <span className="hidden text-caption text-muted sm:inline">Enter untuk kirim · Shift + Enter untuk baris baru</span>
+                    </div>
+
+                    {thinking && !isSending ? (
+                      <Button type="button" variant="secondary" onClick={() => void stopReply()} aria-label="Hentikan balasan AI">
+                        <Square size={16} strokeWidth={1.75} fill="currentColor" aria-hidden="true" />
+                        Berhenti
+                      </Button>
+                    ) : (
+                      <Button
+                        type="submit"
+                        loading={isSending || isUploadingFile}
+                        disabled={isSending || isUploadingFile || (!prompt.trim() && !stagedFile)}
+                      >
+                        {!(isSending || isUploadingFile) && <Send size={20} strokeWidth={1.75} aria-hidden="true" />}
+                        {isUploadingFile ? "Mengunggah…" : isSending ? "Mengirim…" : "Kirim"}
+                      </Button>
+                    )}
+                  </div>
                 </div>
+              </form>
+            </div>
+          </section>
+
+          {/* NotebookLM-style Right Studio Sidebar: collapsible rail + extensible feature tabs */}
+          {sidebarOpen ? (
+            <aside
+              ref={sidebarRef}
+              aria-label="Sidebar Studio & Materi"
+              style={widePanel ? ({ "--mindmap-w": `${mindmapWidthPct}%` } as CSSProperties) : undefined}
+              className={`fixed inset-y-16 right-0 z-20 flex max-w-full shrink-0 flex-col overflow-hidden border-l border-border bg-surface shadow-[var(--shadow-overlay)] lg:relative lg:inset-y-0 lg:z-auto lg:shadow-none ${
+                isResizingSidebar ? "" : "transition-[width] duration-200"
+              } ${widePanel ? "w-full lg:w-[var(--mindmap-w)]" : "w-80 sm:w-96"}`}
+            >
+              {/* Drag the left edge to change the mindmap width (desktop only, at most half of the screen) */}
+              {widePanel && (
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Ubah lebar mindmap"
+                  aria-valuemin={MINDMAP_MIN_PCT}
+                  aria-valuemax={MINDMAP_MAX_PCT}
+                  aria-valuenow={Math.round(mindmapWidthPct)}
+                  tabIndex={0}
+                  title="Geser untuk mengubah lebar · klik 2x untuk mengembalikan"
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    resizingRef.current = true;
+                    setIsResizingSidebar(true);
+                  }}
+                  onPointerMove={(event) => {
+                    if (!resizingRef.current) return;
+                    // the button was released somewhere we did not hear about: end the drag instead of following the mouse
+                    if (event.buttons === 0) return stopResizing();
+                    resizeSidebarTo(event.clientX);
+                  }}
+                  onPointerUp={stopResizing}
+                  onPointerCancel={stopResizing}
+                  onLostPointerCapture={stopResizing}
+                  onDoubleClick={() => setMindmapWidthPct(MINDMAP_DEFAULT_PCT)}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowLeft") {
+                      event.preventDefault();
+                      setMindmapWidthPct((w) => clampMindmapWidth(w + 2));
+                    } else if (event.key === "ArrowRight") {
+                      event.preventDefault();
+                      setMindmapWidthPct((w) => clampMindmapWidth(w - 2));
+                    }
+                  }}
+                  className={`absolute inset-y-0 left-0 z-10 hidden w-3 cursor-col-resize touch-none select-none transition-colors hover:bg-primary/30 focus-visible:bg-primary/40 lg:block ${
+                    isResizingSidebar ? "bg-primary/40" : ""
+                  }`}
+                />
+              )}
+              {/* NotebookLM-style Sidebar Tab Bar */}
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2">
+                <nav aria-label="Menu fitur materi" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+                  {SIDEBAR_TABS.map((tab) => {
+                    const isActive = activeTab === tab.id;
+                    const TabIcon = tab.Icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveTab(tab.id)}
+                        aria-current={isActive ? "page" : undefined}
+                        className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-caption font-semibold transition-colors ${
+                          isActive
+                            ? "bg-primary text-white"
+                            : "text-muted hover:bg-bg hover:text-ink"
+                        }`}
+                      >
+                        <TabIcon size={15} strokeWidth={1.75} aria-hidden="true" />
+                        <span>{tab.label}</span>
+                        {tab.id === "sources" && (
+                          <span
+                            className={`rounded-full px-1.5 py-0.2 text-[11px] font-semibold ${
+                              isActive ? "bg-white/20 text-white" : "bg-bg text-muted"
+                            }`}
+                          >
+                            {sources.length}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </nav>
 
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 py-2 text-caption font-semibold text-ink transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint hover:text-primary"
+                  onClick={() => setSidebarOpen(false)}
+                  title="Lipat sidebar kanan"
+                  aria-label="Lipat sidebar kanan"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg hover:text-ink"
                 >
-                  <FileUp size={15} strokeWidth={1.75} aria-hidden="true" />
-                  <span>Tambah berkas (PDF/DOCX/PPTX)</span>
+                  <PanelRightClose size={18} strokeWidth={1.75} aria-hidden="true" />
                 </button>
+              </div>
 
-                {sources.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-border bg-bg p-5 text-center">
-                    <p className="text-small font-semibold text-ink">Belum ada berkas</p>
-                    <p className="mt-1 text-caption text-muted">
-                      Unggah modul PDF, DOCX, atau slide PPTX agar AI menyusun materi sesuai bahan ajar Anda.
-                    </p>
+              {activeTab === "sources" ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+                  <div>
+                    <h2 className="text-h3 font-semibold text-ink">Sumber materi</h2>
+                    <p className="text-caption text-muted">Berkas referensi pada percakapan ini.</p>
                   </div>
-                ) : (
-                  <ul className="flex flex-col gap-2.5">
-                    {sources.map((source) => (
-                      <li key={source.id} className="chat-item-in flex flex-col gap-2 rounded-md border border-border bg-bg p-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex min-w-0 items-start gap-2.5">
-                            <span
-                              aria-hidden="true"
-                              className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary-tint text-primary"
-                            >
-                              <FileText size={18} strokeWidth={1.75} />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate text-small font-semibold text-ink" title={source.title}>
-                                {source.title}
-                              </p>
-                              <p className="text-caption text-muted">
-                                {source.fileType} · {source.sizeLabel}
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeSource(source.id)}
-                            aria-label={`Hapus berkas ${source.title}`}
-                            className="-m-1 flex size-9 shrink-0 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-out hover:bg-surface hover:text-danger"
-                          >
-                            <Trash2 size={18} strokeWidth={1.75} aria-hidden="true" />
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between border-t border-border pt-2">
-                          <SourceStatusBadge status={source.status} />
-                          <div className="flex items-center gap-3">
-                            {chatId && isUuid(source.id) && (
-                              <button
-                                type="button"
-                                onClick={() => setViewingSourceId(source.id)}
-                                className="inline-flex items-center gap-1 text-caption font-semibold text-ink hover:text-primary"
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 py-2 text-caption font-semibold text-ink transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint hover:text-primary"
+                  >
+                    <FileUp size={15} strokeWidth={1.75} aria-hidden="true" />
+                    <span>Tambah berkas (PDF/DOCX/PPTX)</span>
+                  </button>
+
+                  {sources.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-border bg-bg p-5 text-center">
+                      <p className="text-small font-semibold text-ink">Belum ada berkas</p>
+                      <p className="mt-1 text-caption text-muted">
+                        Unggah modul PDF, DOCX, atau slide PPTX agar AI menyusun materi sesuai bahan ajar Anda.
+                      </p>
+                    </div>
+                  ) : (
+                    <ul className="flex flex-col gap-2.5">
+                      {sources.map((source) => (
+                        <li key={source.id} className="chat-item-in flex flex-col gap-2 rounded-md border border-border bg-bg p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex min-w-0 items-start gap-2.5">
+                              <span
+                                aria-hidden="true"
+                                className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary-tint text-primary"
                               >
-                                <Eye size={14} strokeWidth={1.75} aria-hidden="true" />
-                                Lihat
-                              </button>
-                            )}
+                                <FileText size={18} strokeWidth={1.75} />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-small font-semibold text-ink" title={source.title}>
+                                  {source.title}
+                                </p>
+                                <p className="text-caption text-muted">
+                                  {source.fileType} · {source.sizeLabel}
+                                </p>
+                              </div>
+                            </div>
                             <button
                               type="button"
-                              onClick={() =>
-                                void submitMessage(`Tolong buatkan ringkasan materi dan latihan soal dari berkas ${source.title}.`)
-                              }
-                              className="text-caption font-semibold text-primary hover:underline"
+                              onClick={() => removeSource(source.id)}
+                              aria-label={`Hapus berkas ${source.title}`}
+                              className="-m-1 flex size-9 shrink-0 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-out hover:bg-surface hover:text-danger"
                             >
-                              Gunakan di chat
+                              <Trash2 size={18} strokeWidth={1.75} aria-hidden="true" />
                             </button>
                           </div>
+                          <div className="flex items-center justify-between border-t border-border pt-2">
+                            <SourceStatusBadge status={source.status} />
+                            <div className="flex items-center gap-3">
+                              {chatId && isUuid(source.id) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingSourceId(source.id)}
+                                  className="inline-flex items-center gap-1 text-caption font-semibold text-ink hover:text-primary"
+                                >
+                                  <Eye size={14} strokeWidth={1.75} aria-hidden="true" />
+                                  Lihat
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void submitMessage(`Tolong buatkan ringkasan materi dan latihan soal dari berkas ${source.title}.`)
+                                }
+                                className="text-caption font-semibold text-primary hover:underline"
+                              >
+                                Gunakan di chat
+                              </button>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <hr className="mt-auto border-border" />
+
+                  <div>
+                    <h2 className="text-h3 font-semibold text-ink">Soal asesmen</h2>
+                    <p className="text-caption text-muted">Setujui soal agar tersimpan di sini; Pre-Test dan Post-Test dibuat terpisah.</p>
+                  </div>
+                  <ul className="flex flex-col gap-2.5">
+                    {assessmentSlots.map(({ kind, entry }) => (
+                      <li key={kind} className="chat-item-in flex flex-col gap-2 rounded-md border border-border bg-bg p-3">
+                        <div className="flex items-start gap-2.5">
+                          <span
+                            aria-hidden="true"
+                            className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary-tint text-primary"
+                          >
+                            <ClipboardList size={18} strokeWidth={1.75} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-small font-semibold text-ink" title={entry?.assessment.title}>
+                              {entry?.assessment.title ?? assessmentKindLabel(kind)}
+                            </p>
+                            <p className="text-caption text-muted">
+                              {assessmentKindLabel(kind)} · {entry ? `${entry.assessment.questions.length} soal` : "Belum dibuat"}
+                            </p>
+                          </div>
+                          {entry && <StatusBadge status={entry.assessment.status} />}
+                        </div>
+                        <div className="flex items-center justify-end gap-3 border-t border-border pt-2">
+                          {entry ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenAssessmentMsgId(entry.messageId);
+                                setOpenAssessmentKind(kind);
+                                setActiveTab("assessment");
+                              }}
+                              className="inline-flex items-center gap-1 text-caption font-semibold text-ink hover:text-primary"
+                            >
+                              <Eye size={14} strokeWidth={1.75} aria-hidden="true" />
+                              {entry.assessment.status === "approved" ? "Lihat" : "Periksa & Setujui"}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateAssessment(kind)}
+                            disabled={thinking || isUploadingFile}
+                            className="text-caption font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {entry ? "Buat ulang" : `Buat ${assessmentKindLabel(kind)}`}
+                          </button>
                         </div>
                       </li>
                     ))}
                   </ul>
-                )}
 
-                <hr className="mt-auto border-border" />
-
-                <div>
-                  <h2 className="text-h3 font-semibold text-ink">Soal asesmen</h2>
-                  <p className="text-caption text-muted">Setujui soal agar tersimpan di sini; Pre-Test dan Post-Test dibuat terpisah.</p>
+                  <Button
+                    variant="primary"
+                    full
+                    onClick={handleGenerateMindmap}
+                    disabled={thinking || isUploadingFile}
+                  >
+                    <Network size={18} strokeWidth={1.75} aria-hidden="true" />
+                    Buat Mindmap
+                  </Button>
                 </div>
-                <ul className="flex flex-col gap-2.5">
-                  {assessmentSlots.map(({ kind, entry }) => (
-                    <li key={kind} className="chat-item-in flex flex-col gap-2 rounded-md border border-border bg-bg p-3">
-                      <div className="flex items-start gap-2.5">
-                        <span
-                          aria-hidden="true"
-                          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary-tint text-primary"
-                        >
-                          <ClipboardList size={18} strokeWidth={1.75} />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-small font-semibold text-ink" title={entry?.assessment.title}>
-                            {entry?.assessment.title ?? assessmentKindLabel(kind)}
-                          </p>
-                          <p className="text-caption text-muted">
-                            {assessmentKindLabel(kind)} · {entry ? `${entry.assessment.questions.length} soal` : "Belum dibuat"}
-                          </p>
-                        </div>
-                        {entry && <StatusBadge status={entry.assessment.status} />}
-                      </div>
-                      <div className="flex items-center justify-end gap-3 border-t border-border pt-2">
-                        {entry ? (
+              ) : activeTab === "assessment" ? (
+                activeAssessmentEntry ? (
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                    <div role="tablist" aria-label="Soal asesmen" className="flex shrink-0 gap-2 border-b border-border bg-bg px-4 py-2.5">
+                      {assessmentSlots.map(({ kind, entry }) => {
+                        const selected = (openAssessmentKind ?? activeAssessmentEntry.assessments[0].kind) === kind;
+                        return (
                           <button
+                            key={kind}
                             type="button"
+                            role="tab"
+                            aria-selected={selected}
+                            disabled={!entry && (thinking || isUploadingFile)}
                             onClick={() => {
+                              if (!entry) return handleGenerateAssessment(kind);
                               setOpenAssessmentMsgId(entry.messageId);
                               setOpenAssessmentKind(kind);
-                              setActiveTab("assessment");
                             }}
-                            className="inline-flex items-center gap-1 text-caption font-semibold text-ink hover:text-primary"
+                            className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3.5 py-1.5 text-body font-semibold transition-colors disabled:opacity-60 ${
+                              selected ? "border-primary bg-surface text-primary" : "border-border bg-bg text-muted hover:border-primary/50 hover:text-ink"
+                            }`}
                           >
-                            <Eye size={14} strokeWidth={1.75} aria-hidden="true" />
-                            {entry.assessment.status === "approved" ? "Lihat" : "Periksa & Setujui"}
+                            {assessmentKindLabel(kind)}
+                            {entry ? <StatusBadge status={entry.assessment.status} /> : <span className="text-caption font-normal">+ Buat</span>}
                           </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => handleGenerateAssessment(kind)}
-                          disabled={thinking || isUploadingFile}
-                          className="text-caption font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {entry ? "Buat ulang" : `Buat ${assessmentKindLabel(kind)}`}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                <Button
-                  variant="primary"
-                  full
-                  onClick={handleGenerateMindmap}
-                  disabled={thinking || isUploadingFile}
-                >
-                  <Network size={18} strokeWidth={1.75} aria-hidden="true" />
-                  Buat Mindmap
-                </Button>
-              </div>
-            ) : activeTab === "assessment" ? (
-              activeAssessmentEntry ? (
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <div role="tablist" aria-label="Soal asesmen" className="flex shrink-0 gap-2 border-b border-border bg-bg px-4 py-2.5">
-                    {assessmentSlots.map(({ kind, entry }) => {
-                      const selected = (openAssessmentKind ?? activeAssessmentEntry.assessments[0].kind) === kind;
-                      return (
-                        <button
-                          key={kind}
-                          type="button"
-                          role="tab"
-                          aria-selected={selected}
-                          disabled={!entry && (thinking || isUploadingFile)}
-                          onClick={() => {
-                            if (!entry) return handleGenerateAssessment(kind);
-                            setOpenAssessmentMsgId(entry.messageId);
-                            setOpenAssessmentKind(kind);
-                          }}
-                          className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3.5 py-1.5 text-body font-semibold transition-colors disabled:opacity-60 ${
-                            selected ? "border-primary bg-surface text-primary" : "border-border bg-bg text-muted hover:border-primary/50 hover:text-ink"
-                          }`}
-                        >
-                          {assessmentKindLabel(kind)}
-                          {entry ? <StatusBadge status={entry.assessment.status} /> : <span className="text-caption font-normal">+ Buat</span>}
-                        </button>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
+                    <AssessmentBoard
+                      key={`${activeAssessmentEntry.id}-${openAssessmentKind ?? ""}`}
+                      assessments={activeAssessmentEntry.assessments}
+                      kind={openAssessmentKind ?? activeAssessmentEntry.assessments[0].kind}
+                      onSave={chatId && !thinking ? saveAssessments : undefined}
+                    />
                   </div>
-                  <AssessmentBoard
-                    key={`${activeAssessmentEntry.id}-${openAssessmentKind ?? ""}`}
-                    assessments={activeAssessmentEntry.assessments}
-                    kind={openAssessmentKind ?? activeAssessmentEntry.assessments[0].kind}
-                    onSave={chatId && !thinking ? saveAssessments : undefined}
+                ) : (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+                    <span className="flex size-12 items-center justify-center rounded-full bg-primary-tint text-primary">
+                      <ClipboardList size={24} strokeWidth={1.75} aria-hidden="true" />
+                    </span>
+                    <div className="max-w-xs">
+                      <p className="text-h3 font-semibold text-ink">
+                        {thinking ? "Sedang menyusun soal…" : "Belum ada Pre-Test / Post-Test"}
+                      </p>
+                      <p className="mt-1 text-caption text-muted">
+                        {thinking
+                          ? "Harap tunggu, AI sedang menyusun 10 soal dari seluruh materi Anda."
+                          : "Buat 10 soal pilihan ganda dari materi, lalu edit sebelum dipakai."}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button variant="primary" onClick={() => handleGenerateAssessment("pretest")} loading={thinking} disabled={thinking || isUploadingFile}>
+                        Buat Pre-Test
+                      </Button>
+                      <Button variant="secondary" onClick={() => handleGenerateAssessment("posttest")} disabled={thinking || isUploadingFile}>
+                        Buat Post-Test
+                      </Button>
+                    </div>
+                  </div>
+                )
+              ) : activeMindmap ? (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <MindmapBoard
+                    mindmap={activeMindmap}
+                    fillHeight
+                    onAskNodePrompt={(promptText) => void submitMessage(promptText)}
+                    onSave={chatId && activeMindmapMsgId && !thinking ? saveMindmap : undefined}
                   />
                 </div>
               ) : (
                 <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
                   <span className="flex size-12 items-center justify-center rounded-full bg-primary-tint text-primary">
-                    <ClipboardList size={24} strokeWidth={1.75} aria-hidden="true" />
+                    <Network size={24} strokeWidth={1.75} aria-hidden="true" />
                   </span>
                   <div className="max-w-xs">
                     <p className="text-h3 font-semibold text-ink">
-                      {thinking ? "Sedang menyusun soal…" : "Belum ada Pre-Test / Post-Test"}
+                      {thinking ? "Sedang menyusun Mindmap…" : "Belum ada Mindmap"}
                     </p>
                     <p className="mt-1 text-caption text-muted">
                       {thinking
-                        ? "Harap tunggu, AI sedang menyusun 10 soal dari seluruh materi Anda."
-                        : "Buat 10 soal pilihan ganda dari materi, lalu edit sebelum dipakai."}
+                        ? "Harap tunggu sebentar, AI sedang memetakan konsep utama dan cabang materi Anda."
+                        : "Buat visualisasi peta konsep interaktif dari berkas materi pada percakapan ini."}
                     </p>
                   </div>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <Button variant="primary" onClick={() => handleGenerateAssessment("pretest")} loading={thinking} disabled={thinking || isUploadingFile}>
-                      Buat Pre-Test
-                    </Button>
-                    <Button variant="secondary" onClick={() => handleGenerateAssessment("posttest")} disabled={thinking || isUploadingFile}>
-                      Buat Post-Test
-                    </Button>
-                  </div>
+                  <Button
+                    variant="primary"
+                    onClick={handleGenerateMindmap}
+                    loading={thinking}
+                    disabled={thinking || isUploadingFile}
+                  >
+                    <Network size={18} strokeWidth={1.75} aria-hidden="true" />
+                    Buat Mindmap Sekarang
+                  </Button>
                 </div>
-              )
-            ) : activeMindmap ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <MindmapBoard
-                  mindmap={activeMindmap}
-                  fillHeight
-                  onAskNodePrompt={(promptText) => void submitMessage(promptText)}
-                  onSave={chatId && activeMindmapMsgId && !thinking ? saveMindmap : undefined}
-                />
-              </div>
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-                <span className="flex size-12 items-center justify-center rounded-full bg-primary-tint text-primary">
-                  <Network size={24} strokeWidth={1.75} aria-hidden="true" />
-                </span>
-                <div className="max-w-xs">
-                  <p className="text-h3 font-semibold text-ink">
-                    {thinking ? "Sedang menyusun Mindmap…" : "Belum ada Mindmap"}
-                  </p>
-                  <p className="mt-1 text-caption text-muted">
-                    {thinking
-                      ? "Harap tunggu sebentar, AI sedang memetakan konsep utama dan cabang materi Anda."
-                      : "Buat visualisasi peta konsep interaktif dari berkas materi pada percakapan ini."}
-                  </p>
-                </div>
-                <Button
-                  variant="primary"
-                  onClick={handleGenerateMindmap}
-                  loading={thinking}
-                  disabled={thinking || isUploadingFile}
-                >
-                  <Network size={18} strokeWidth={1.75} aria-hidden="true" />
-                  Buat Mindmap Sekarang
-                </Button>
-              </div>
-            )}
-          </aside>
-        ) : (
-          /* Collapsed NotebookLM-style vertical icon rail on the right edge */
-          <aside
-            aria-label="Sidebar Studio terlipat"
-            className="hidden w-14 shrink-0 flex-col items-center gap-2 border-l border-border bg-surface py-3 lg:flex"
-          >
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              title="Buka sidebar kanan"
-              aria-label="Buka sidebar kanan"
-              className="flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg hover:text-ink"
+              )}
+            </aside>
+          ) : (
+            /* Collapsed NotebookLM-style vertical icon rail on the right edge */
+            <aside
+              aria-label="Sidebar Studio terlipat"
+              className="hidden w-14 shrink-0 flex-col items-center gap-2 border-l border-border bg-surface py-3 lg:flex"
             >
-              <PanelRightOpen size={18} strokeWidth={1.75} aria-hidden="true" />
-            </button>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                title="Buka sidebar kanan"
+                aria-label="Buka sidebar kanan"
+                className="flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg hover:text-ink"
+              >
+                <PanelRightOpen size={18} strokeWidth={1.75} aria-hidden="true" />
+              </button>
 
-            <span className="my-0.5 h-px w-7 bg-border" aria-hidden="true" />
+              <span className="my-0.5 h-px w-7 bg-border" aria-hidden="true" />
 
-            {SIDEBAR_TABS.map((tab) => {
-              const TabIcon = tab.Icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setSidebarOpen(true);
-                  }}
-                  title={tab.label}
-                  aria-label={tab.label}
-                  className={`relative flex size-10 items-center justify-center rounded-md transition-colors ${
-                    isActive
-                      ? "bg-primary text-white"
-                      : "text-muted hover:bg-bg hover:text-ink"
-                  }`}
-                >
-                  <TabIcon size={18} strokeWidth={1.75} aria-hidden="true" />
-                  {tab.id === "sources" && sources.length > 0 && (
-                    <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white ring-2 ring-surface">
-                      {sources.length}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </aside>
+              {SIDEBAR_TABS.map((tab) => {
+                const TabIcon = tab.Icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(tab.id);
+                      setSidebarOpen(true);
+                    }}
+                    title={tab.label}
+                    aria-label={tab.label}
+                    className={`relative flex size-10 items-center justify-center rounded-md transition-colors ${
+                      isActive
+                        ? "bg-primary text-white"
+                        : "text-muted hover:bg-bg hover:text-ink"
+                    }`}
+                  >
+                    <TabIcon size={18} strokeWidth={1.75} aria-hidden="true" />
+                    {tab.id === "sources" && sources.length > 0 && (
+                      <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white ring-2 ring-surface">
+                        {sources.length}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </aside>
+          )}
+        </div>
+
+        {viewingSource && chatId && (
+          <SourceViewer chatId={chatId} source={viewingSource} onClose={() => setViewingSourceId(null)} />
         )}
       </div>
-
-      {viewingSource && chatId && (
-        <SourceViewer chatId={chatId} source={viewingSource} onClose={() => setViewingSourceId(null)} />
-      )}
-    </div>
+    </VisualAskProvider>
   );
 }
