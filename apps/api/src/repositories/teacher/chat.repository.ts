@@ -49,7 +49,9 @@ export function createTeacherChatRepository(prisma: PrismaClient): TeacherChatRe
         });
         await tx.material.deleteMany({ where: { id: { in: orphans.map((o) => o.id) } } });
         // jobs that have not started would only fail on rows that are gone (one already running is handled by the worker)
-        await tx.job.deleteMany({ where: { status: "QUEUED", type: "CHAT_REPLY", payload: { path: ["chatId"], equals: chatId } } });
+        await tx.job.deleteMany({
+          where: { status: { in: ["QUEUED", "RUNNING"] }, type: { in: ["CHAT_REPLY", "GENERATE_PROBLEM"] }, payload: { path: ["chatId"], equals: chatId } },
+        });
         for (const { id } of orphans) {
           await tx.job.deleteMany({ where: { status: "QUEUED", type: "EXTRACT", payload: { path: ["materialId"], equals: id } } });
         }

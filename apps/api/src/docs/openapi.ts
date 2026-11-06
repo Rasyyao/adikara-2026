@@ -150,7 +150,7 @@ export function buildOpenApi(groups: RouteGroup[]): Json {
   return {
     openapi: "3.0.3",
     info: {
-      title: "Adikara API",
+      title: "NusaCodeAI API",
       version: API_VERSION,
       description:
         "REST JSON API. Log in at `/auth/login` (or `/auth/student/login`), then press **Authorize** and paste the `access_token`.\n\n" +

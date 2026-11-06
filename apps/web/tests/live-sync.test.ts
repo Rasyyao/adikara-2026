@@ -38,8 +38,12 @@ describe("liveEventOf", () => {
     expect(liveEventOf("quiz_opened", { quiz: { id: "q1" } })).toEqual({ type: "quiz", quizId: "q1", change: "opened" });
     expect(liveEventOf("quiz_progress", { quiz_id: "q1", answered: 2 })).toEqual({ type: "quiz", quizId: "q1", change: "progress" });
   });
+  it("turns a join or leave into a presence event, so quiz rosters refresh", () => {
+    expect(liveEventOf("participant_joined", { student_id: "x" })).toEqual({ type: "presence" });
+    expect(liveEventOf("participant_left", { student_id: "x" })).toEqual({ type: "presence" });
+  });
   it("ignores events that are not about the board", () => {
-    expect(liveEventOf("participant_joined", { student_id: "x" })).toBeNull();
+    expect(liveEventOf("session_locked", {})).toBeNull();
   });
 });
 
@@ -52,5 +56,19 @@ describe("createLiveChannel", () => {
     stop();
     channel.emit({ type: "mode", drawAllowed: false });
     expect(seen).toEqual(["mode"]);
+  });
+  it("replays the latest snapshot (with subsequent ops and mode changes) to a late subscriber", () => {
+    const channel = createLiveChannel();
+    channel.emit({ type: "snapshot", elements: [rect("a", 10)], drawAllowed: true, me: { id: "t1", name: "Bu Guru", role: "teacher" } });
+    channel.emit({ type: "ops", by: "t1", upserts: [rect("a", 40), rect("b", 80)], deletes: [] });
+    channel.emit({ type: "mode", drawAllowed: false });
+    const received: LiveEvent[] = [];
+    channel.subscribe((e) => received.push(e));
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({
+      type: "snapshot",
+      drawAllowed: false,
+      elements: [rect("a", 40), rect("b", 80)],
+    });
   });
 });

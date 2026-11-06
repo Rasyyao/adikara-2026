@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, CalendarCheck, Clock, GraduationCap, Presentation, UserCheck, UserMinus, UserX, Users, type LucideIcon } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, CalendarCheck, ClipboardCheck, Clock, GraduationCap, Presentation, UserCheck, UserMinus, UserX, Users, type LucideIcon } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
   classes: GraduationCap,
@@ -9,6 +9,7 @@ const ICONS: Record<string, LucideIcon> = {
   absent: UserX,
   kicked: UserMinus,
   calendar: CalendarCheck,
+  quiz: ClipboardCheck,
 };
 
 interface Stat {

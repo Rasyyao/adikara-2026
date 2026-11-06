@@ -108,10 +108,10 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
     return { session_id: session.id, class_id: session.classId, summary, students: rows };
   }
 
-  /** The material must be a chat of the teacher who owns the class; another teacher's chat reads as not found. */
-  async function ownedChat(teacherId: string, chatId: string) {
+  /** The material must be a chat of the teacher who owns the class (or any existing chat when the caller is an admin); another teacher's chat reads as not found. */
+  async function ownedChat(auth: AuthContext, teacherId: string, chatId: string) {
     const chat = await sessions.findChatSummary(chatId);
-    if (!chat || chat.teacherId !== teacherId) throw new AppError(404, "material_not_found", "Material not found");
+    if (!chat || (auth.role !== "ADMIN" && chat.teacherId !== teacherId)) throw new AppError(404, "material_not_found", "Material not found");
     return chat;
   }
 
@@ -139,7 +139,7 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
       }
       if (classroom.archived) throw new AppError(409, "class_archived", "The class is archived");
 
-      if (chatId) await ownedChat(classroom.teacherId, chatId);
+      if (chatId) await ownedChat(auth, classroom.teacherId, chatId);
 
       const open = await repository.findOpenSessionByClass(classroom.id);
       if (open) {
@@ -166,12 +166,13 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
     async assignMaterial(auth, sessionId, chatId) {
       const session = await core.loadManaged(auth, sessionId);
       if (session.status === "ENDED") throw sessionEnded();
-      if (chatId) await ownedChat(session.teacherId, chatId);
+      if (chatId) await ownedChat(auth, session.teacherId, chatId);
       return core.detail(await sessions.updateSession(session.id, { chatId }));
     },
 
     async getBoard(auth, sessionId) {
       const session = await core.loadManaged(auth, sessionId);
+      await liveBoard?.flush?.(session.id);
       const record = await repository.findBoard(session.id);
       return { board: record?.scene ?? null, updated_at: iso(record?.updatedAt ?? null) };
     },
@@ -180,7 +181,7 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
       const session = await core.loadManaged(auth, sessionId);
       if (session.status === "ENDED") throw sessionEnded();
       const saved = await repository.saveBoard(session.id, scene);
-      liveBoard?.replace(session.id, scene.elements);
+      liveBoard?.replace(session.id, scene.elements, auth.userId);
       return { updated_at: saved.updatedAt.toISOString() };
     },
 
@@ -212,6 +213,7 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
       const session = await core.loadManaged(auth, sessionId);
       if (session.status === "ENDED") throw sessionEnded();
 
+      await liveBoard?.flush?.(session.id);
       const ended = await core.endNow(session);
       return { session: toSessionView(ended), attendance: await buildAttendance(ended) };
     },

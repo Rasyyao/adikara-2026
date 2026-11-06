@@ -5,11 +5,13 @@ import { buildOpenApi } from "../../src/docs/openapi.js";
 import { parseEmail, validatePasswordStrength } from "../../src/http/validators/shared/common.js";
 import { parseStudentLogin } from "../../src/http/validators/student/auth.js";
 import { DEV_ACCOUNTS, DEV_PASSWORD, readSeedOptions, runSeed } from "../../prisma/seed.js";
+import { DEMO_MATERIALS, DEMO_PROBLEMS } from "../../prisma/seed-problems.js";
+import { gradeArrangement, problemIssues, readChallenge } from "../../src/lib/block-puzzle.js";
 import { realRouteGroups } from "../helpers/route-groups.js";
 
 /** Records upserts in memory; enough to check what the seeder writes without a database. */
 function fakePrisma() {
-  const stores = { teachers: new Map<string, any>(), classrooms: new Map<string, any>(), students: new Map<string, any>() };
+  const stores = { teachers: new Map<string, any>(), classrooms: new Map<string, any>(), students: new Map<string, any>(), chats: new Map<string, any>(), problems: new Map<string, any>() };
   let id = 0;
   const upsert = (store: Map<string, any>, key: string) => async ({ where, update, create }: any) => {
     const existing = store.get(where[key]);
@@ -21,6 +23,8 @@ function fakePrisma() {
     teacher: { upsert: upsert(stores.teachers, "email") },
     classroom: { upsert: upsert(stores.classrooms, "classCode") },
     student: { upsert: upsert(stores.students, "username") },
+    chat: { upsert: upsert(stores.chats, "id") },
+    blockProblem: { upsert: upsert(stores.problems, "id") },
   } as unknown as PrismaClient;
   return { prisma, ...stores };
 }
@@ -175,5 +179,42 @@ describe("seed data matches the Swagger docs", () => {
       expect(text).toContain(login);
     }
     expect(text).toContain(DEV_PASSWORD);
+  });
+});
+
+describe("demo block problems", () => {
+  it("seeds the materials and problems for the dev teacher only, and again without duplicates", async () => {
+    const { prisma, chats, problems, teachers } = fakePrisma();
+    const summary = await runSeed(prisma, readSeedOptions(dev));
+    await runSeed(prisma, readSeedOptions(dev));
+    expect(summary.demo).toEqual({ materials: DEMO_MATERIALS.length, problems: DEMO_PROBLEMS.length });
+    expect(chats.size).toBe(DEMO_MATERIALS.length);
+    expect(problems.size).toBe(DEMO_PROBLEMS.length);
+    const teacherId = teachers.get(DEV_ACCOUNTS.teacher.email).id;
+    expect([...problems.values()].every((p) => p.teacherId === teacherId)).toBe(true);
+
+    const prod = fakePrisma();
+    await runSeed(prod.prisma, readSeedOptions({ NODE_ENV: "production", SEED_ADMIN_EMAIL: "a@b.co", SEED_ADMIN_PASSWORD: "Prod-pass-1", BCRYPT_COST: "4" }));
+    expect(prod.problems.size).toBe(0);
+  });
+
+  it.each(DEMO_PROBLEMS.map((p) => [p.title, p] as const))("%s is well formed, and its answer key solves it", (_title, problem) => {
+    const challenge = readChallenge(problem.challenge);
+    expect(challenge).toEqual(problem.challenge); // nothing dropped as malformed
+    const issues = problemIssues({ story: problem.story, challenge });
+    if (problem.title.startsWith("Draf")) {
+      expect(issues.length).toBeGreaterThan(0);
+      expect(problem.ready).toBe(false);
+      return;
+    }
+    expect(issues).toEqual([]);
+    expect(gradeArrangement(challenge, challenge.solution).correct).toBe(true);
+    const used = JSON.stringify(challenge.solution).match(/"block":"[^"]+"/g)!.length;
+    expect(challenge.blocks.length).toBeGreaterThan(used); // keeps distractors
+    if (challenge.code) {
+      // the teacher's reference solution passes every test
+      const fn = new Function(`${challenge.code.reference}\nreturn ${challenge.code.fn};`)() as (...args: unknown[]) => unknown;
+      for (const test of challenge.code.tests) expect(fn(...test.args)).toEqual(test.expected);
+    }
   });
 });

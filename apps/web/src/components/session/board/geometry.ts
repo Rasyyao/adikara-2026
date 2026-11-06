@@ -164,21 +164,20 @@ export function hitElement(el: BoardElement, p: Point, tol: number): boolean {
     }
     default: {
       const b = boundsOf(el);
-      const filled = el.backgroundColor !== "transparent" || Boolean(el.label); // a labelled shape can be picked by its inside
       if (el.type === "ellipse") {
         const rx = b.w / 2 || 0.0001;
         const ry = b.h / 2 || 0.0001;
         const nx = (p[0] - (b.x + rx)) / rx;
         const ny = (p[1] - (b.y + ry)) / ry;
         const r = Math.hypot(nx, ny);
-        if (filled && r <= 1) return true;
+        if (r <= 1) return true;
         return Math.abs(r - 1) * Math.min(rx, ry) <= reach;
       }
       const corners: Point[] =
         el.type === "diamond"
           ? [[b.x + b.w / 2, b.y], [b.x + b.w, b.y + b.h / 2], [b.x + b.w / 2, b.y + b.h], [b.x, b.y + b.h / 2]]
           : [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]];
-      if (filled && insidePolygon(p, corners)) return true;
+      if (insidePolygon(p, corners)) return true;
       return distToPolygon(p, corners) <= reach;
     }
   }

@@ -19,8 +19,8 @@ describe("OpenAPI: sessions", () => {
     expect(teacher.description).toMatch(/POST \/sessions/);
   });
 
-  it("documents all 23 endpoints with {braces} in the paths", () => {
-    expect(sessionRoutes).toHaveLength(23);
+  it("documents all 31 endpoints with {braces} in the paths", () => {
+    expect(sessionRoutes).toHaveLength(31);
     for (const path of [
       "/sessions",
       "/sessions/join",

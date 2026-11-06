@@ -3,7 +3,7 @@
 import { ApiError } from "@/lib/api/errors";
 import { studentQuizzesApi, teacherQuizzesApi } from "@/lib/api/endpoints";
 import type { NewQuiz, QuizChoiceChange, QuizResults, QuizView, StudentQuiz } from "@/lib/api/types";
-import { requireViewer } from "@/lib/auth/dal";
+import { requireActionToken } from "@/lib/auth/dal";
 import { isUuid } from "@/lib/validation/auth";
 import type { ActionResult } from "./sessions";
 
@@ -30,15 +30,18 @@ function describe(error: unknown): string {
         return "Anda dikeluarkan dari sesi ini.";
       case "validation_error":
         return "Soal kuis tidak lengkap: setiap soal butuh pertanyaan, pilihan, dan kunci jawaban.";
+      case "unauthorized":
+      case "forbidden":
+        return "Sesi masuk telah berakhir. Muat ulang halaman.";
     }
   }
   return "Terjadi kesalahan di server. Coba lagi sebentar lagi.";
 }
 
 async function call<T>(role: "staff" | "student", ids: string[], run: (token: string) => Promise<T>): Promise<ActionResult<{ data: T }>> {
-  const { token } = await requireViewer(role);
   if (!ids.every(isUuid)) return { ok: false, message: "Kuis tidak valid." };
   try {
+    const token = await requireActionToken(role);
     return { ok: true, data: await run(token) };
   } catch (error) {
     return { ok: false, message: describe(error) };

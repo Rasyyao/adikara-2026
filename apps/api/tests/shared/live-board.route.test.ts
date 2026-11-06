@@ -53,7 +53,7 @@ describe("POST /sessions/:id/live (shared whiteboard)", () => {
     expect(snapshot.data.live.me).toMatchObject({ role: "student" });
   });
 
-  it("a student draws, but cannot change or delete what the teacher drew", async () => {
+  it("a student draws and can move shared shapes while allowed, but cannot delete what the teacher drew", async () => {
     const { teacher, send } = await liveClass();
     await send({ upserts: [rect("teacher")] });
     await nextOf(teacher, "board_ops");
@@ -62,8 +62,12 @@ describe("POST /sessions/:id/live (shared whiteboard)", () => {
     expect(mine.body.revert).toEqual({ upserts: [], deletes: [] });
     expect((await nextOf(teacher, "board_ops")).data.upserts).toEqual([rect("mine")]);
 
-    const theirs = await send({ upserts: [rect("teacher", 99)], deletes: ["teacher"] }, studentAuth("satu"));
-    expect(theirs.body.revert.upserts).toEqual([rect("teacher"), rect("teacher")]);
+    const moved = await send({ upserts: [rect("teacher", 99)] }, studentAuth("satu"));
+    expect(moved.body.revert).toEqual({ upserts: [], deletes: [] });
+    expect((await nextOf(teacher, "board_ops")).data.upserts).toEqual([rect("teacher", 99)]);
+
+    const deleted = await send({ deletes: ["teacher"] }, studentAuth("satu"));
+    expect(deleted.body.revert.upserts).toEqual([rect("teacher", 99)]);
   });
 
   it("a student who joined in the lobby can draw the moment the class starts", async () => {
@@ -100,6 +104,18 @@ describe("POST /sessions/:id/live (shared whiteboard)", () => {
     expect((await nextOf(teacher, "cursor")).data).toMatchObject({ role: "student", x: 5, y: 6 });
     await send({ cursor: null });
     expect((await nextOf(student, "cursor")).data).toMatchObject({ role: "teacher", hidden: true }); // not the student's own
+  });
+
+  it("a full board save by the teacher broadcasts any new or moved elements to connected students", async () => {
+    const { app, id, student } = await liveClass();
+    const saved = await request(app)
+      .put(SESSION_PATHS.board(id))
+      .set(auth(TEACHER_AUTH))
+      .send({ elements: [rect("from-save", 120)], appState: { viewBackgroundColor: "#ffffff" } });
+    expect(saved.status).toBe(200);
+
+    const ops = await nextOf(student, "board_ops");
+    expect(ops.data).toMatchObject({ upserts: [rect("from-save", 120)], deletes: [] });
   });
 
   it("refuses a student who did not join, and a malformed cursor", async () => {

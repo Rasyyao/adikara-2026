@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Clock, Download, Lock, RefreshCw, Repeat, Trophy, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, Circle, Clock, Download, Lock, PencilLine, RefreshCw, Repeat, Trophy, Users, WifiOff, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { closeQuizAction, quizExportAction, quizResultsAction } from "@/app/actions/quizzes";
 import { Spinner } from "@/components/ui/loaders";
@@ -34,6 +34,141 @@ function Tile({ icon, label, value, hint }: { icon: React.ReactNode; label: stri
   );
 }
 
+type Row = QuizResults["leaderboard"][number];
+
+function StudentChip({ name, children, tone }: { name: string; children: React.ReactNode; tone: "done" | "busy" | "idle" }) {
+  const ring = tone === "done" ? "border-success/30 bg-success/5" : tone === "busy" ? "border-primary/30 bg-primary-tint/60" : "border-border bg-surface";
+  return (
+    <li className={`flex min-w-0 items-center gap-2.5 rounded-lg border p-2.5 ${ring}`}>
+      <span
+        className={`flex size-8 shrink-0 items-center justify-center rounded-full text-caption font-semibold ${
+          tone === "done" ? "bg-success text-white" : tone === "busy" ? "bg-primary text-white" : "bg-bg text-muted"
+        }`}
+        aria-hidden="true"
+      >
+        {name.trim().charAt(0).toUpperCase() || "?"}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-small font-semibold text-ink">{name}</p>
+        {children}
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Who is where in the quiz right now: not opened it yet, answering (how far), or handed in (with the score). Updates as
+ * students answer, so the teacher can see at a glance who to wait for before closing.
+ */
+function LiveActivity({ results, open }: { results: QuizResults; open: boolean }) {
+  const waiting = results.waiting ?? [];
+  const busy = results.leaderboard.filter((r) => r.status === "in_progress").sort((a, b) => b.answered - a.answered);
+  const done = results.leaderboard.filter((r) => r.status === "submitted");
+  const everyone = waiting.length + busy.length + done.length;
+  const total = Math.max(1, everyone);
+  const segments = [
+    { key: "done", count: done.length, label: "Selesai", bar: "bg-success", Icon: CheckCircle2, text: "text-success" },
+    { key: "busy", count: busy.length, label: "Mengerjakan", bar: "bg-primary", Icon: PencilLine, text: "text-primary" },
+    { key: "idle", count: waiting.length, label: "Belum mulai", bar: "bg-border", Icon: Circle, text: "text-muted" },
+  ] as const;
+
+  const group = (title: string, count: number, children: React.ReactNode) =>
+    count > 0 && (
+      <section className="flex flex-col gap-2">
+        <h3 className="text-caption font-semibold uppercase tracking-wide text-muted">
+          {title} ({count})
+        </h3>
+        <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">{children}</ul>
+      </section>
+    );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-lg border border-border bg-surface p-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-small font-semibold text-ink">
+            {done.length} dari {everyone} siswa selesai
+          </p>
+          {open && (
+            <span className="inline-flex items-center gap-1 text-caption text-success">
+              <span className="size-1.5 rounded-full bg-success motion-safe:animate-pulse" aria-hidden="true" />
+              langsung
+            </span>
+          )}
+        </div>
+        <div className="mt-2 flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-bg" role="img" aria-label={segments.map((s) => `${s.count} ${s.label}`).join(", ")}>
+          {segments.map((s) => s.count > 0 && <span key={s.key} className={`h-full ${s.bar} first:rounded-l-full last:rounded-r-full`} style={{ width: `${(s.count / total) * 100}%` }} />)}
+        </div>
+        <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-caption">
+          {segments.map(({ key, count, label, Icon, text }) => (
+            <li key={key} className={`inline-flex items-center gap-1 ${text}`}>
+              <Icon size={13} strokeWidth={2} aria-hidden="true" />
+              <span className="font-semibold">{count}</span>
+              <span className="text-muted">{label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {everyone === 0 ? (
+        <p className="rounded-lg border border-dashed border-border bg-surface p-4 text-center text-small text-muted">Belum ada siswa di sesi ini. Nama mereka muncul begitu masuk dengan PIN.</p>
+      ) : (
+        <>
+          {group(
+            "Sedang mengerjakan",
+            busy.length,
+            busy.map((r: Row) => (
+              <StudentChip key={r.student_id} name={r.name} tone="busy">
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface">
+                    <span className="block h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${(r.answered / Math.max(1, r.total)) * 100}%` }} />
+                  </span>
+                  <span className="shrink-0 text-caption tabular-nums text-muted">
+                    {r.answered}/{r.total}
+                  </span>
+                </div>
+              </StudentChip>
+            )),
+          )}
+          {group(
+            "Belum mulai",
+            waiting.length,
+            waiting.map((w) => (
+              <StudentChip key={w.student_id} name={w.name} tone="idle">
+                <p className="flex items-center gap-1 text-caption text-muted">
+                  {w.online ? (
+                    "Belum membuka kuis"
+                  ) : (
+                    <>
+                      <WifiOff size={12} strokeWidth={2} aria-hidden="true" />
+                      Terputus dari sesi
+                    </>
+                  )}
+                </p>
+              </StudentChip>
+            )),
+          )}
+          {group(
+            "Sudah selesai",
+            done.length,
+            done.map((r: Row) => (
+              <StudentChip key={r.student_id} name={r.name} tone="done">
+                <p className="text-caption text-muted">
+                  {r.rank !== null && MEDALS[r.rank - 1] && <span className="mr-1">{MEDALS[r.rank - 1]}</span>}
+                  <span className="font-semibold text-ink">
+                    {r.score}/{r.total}
+                  </span>{" "}
+                  benar · {formatDuration(r.duration_ms)}
+                </p>
+              </StudentChip>
+            )),
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
  * How the class is doing on a quiz, live: who is answering, the ranking (score, then time), and per question how many
  * got it right, which wrong option drew them (the likely misconception) and who changed their mind. The teacher closes
@@ -57,7 +192,7 @@ export function QuizResultsPanel({
   const toast = useToast();
   const [results, setResults] = useState<QuizResults | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"rank" | "questions">("rank");
+  const [tab, setTab] = useState<"live" | "rank" | "questions">("live");
   const [busy, setBusy] = useState<"close" | "export" | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -88,7 +223,7 @@ export function QuizResultsPanel({
   useEffect(() => {
     if (!channel) return;
     const unsubscribe = channel.subscribe((event) => {
-      if (event.type !== "quiz" || event.quizId !== quizId || refreshTimer.current) return;
+      if (refreshTimer.current || (event.type === "quiz" ? event.quizId !== quizId : event.type !== "presence")) return;
       refreshTimer.current = setTimeout(() => {
         refreshTimer.current = null;
         void load();
@@ -203,10 +338,10 @@ export function QuizResultsPanel({
             <Tile icon={<Users size={13} strokeWidth={2} aria-hidden="true" />} label="Selesai" value={`${s!.submitted}/${s!.joined}`} hint={`${s!.started - s!.submitted} masih mengerjakan`} />
             <Tile icon={<BarChart3 size={13} strokeWidth={2} aria-hidden="true" />} label="Rata-rata" value={s!.average_percent === null ? "–" : `${Math.round(s!.average_percent)}%`} hint={s!.average_score === null ? undefined : `${s!.average_score} benar`} />
             <Tile icon={<Trophy size={13} strokeWidth={2} aria-hidden="true" />} label="Tertinggi" value={s!.highest === null ? "–" : `${s!.highest}/${results.quiz.question_count}`} hint={s!.lowest === null ? undefined : `terendah ${s!.lowest}`} />
-            <Tile icon={<Clock size={13} strokeWidth={2} aria-hidden="true" />} label="Waktu rata-rata" value={formatDuration(s!.average_duration_ms)} />
+            <Tile icon={<Clock size={13} strokeWidth={2} aria-hidden="true" />} label="Durasi" value={formatDuration(s!.average_duration_ms)} />
           </div>
 
-          {hardest && (hardest.correct_rate ?? 1) < 0.6 && (
+          {hardest && (hardest.correct_rate ?? 1) < 0.6 && (!open || hardest.answered >= 3) && (
             <div className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/5 p-3 text-small text-ink">
               <AlertTriangle size={18} strokeWidth={2} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
               <p>
@@ -224,6 +359,7 @@ export function QuizResultsPanel({
           <div role="tablist" aria-label="Tampilan hasil" className="flex gap-1 rounded-lg bg-surface p-1">
             {(
               [
+                { id: "live", label: "Aktivitas", Icon: Activity },
                 { id: "rank", label: "Peringkat", Icon: Trophy },
                 { id: "questions", label: "Per soal", Icon: BarChart3 },
               ] as const
@@ -242,7 +378,9 @@ export function QuizResultsPanel({
             ))}
           </div>
 
-          {tab === "rank" ? (
+          {tab === "live" ? (
+            <LiveActivity results={results} open={open} />
+          ) : tab === "rank" ? (
             results.leaderboard.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border bg-surface p-4 text-center text-small text-muted">
                 Belum ada siswa yang mulai. Minta siswa scan QR di papan atau klik kartu kuisnya.

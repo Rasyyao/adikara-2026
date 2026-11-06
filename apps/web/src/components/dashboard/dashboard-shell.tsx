@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, BookOpen, History, LayoutDashboard, Menu, PanelLeft, Search, Users, X, type LucideIcon } from "lucide-react";
+import { Bell, BookOpen, History, LayoutDashboard, Menu, PanelLeft, Puzzle, Search, Users, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
@@ -11,6 +11,7 @@ const ICONS: Record<string, LucideIcon> = {
   classes: Users,
   materials: BookOpen,
   history: History,
+  problems: Puzzle,
   join: BookOpen,
 };
 

@@ -15,9 +15,9 @@ function inert<T extends object>(): T {
 export function loadRouteGroupsForTooling(): RouteGroup[] {
   const services: Services = {
     admin: { teachers: inert(), students: inert(), classes: inert() },
-    teacher: { auth: inert(), sessions: inert(), classes: inert(), chats: inert() },
+    teacher: { auth: inert(), sessions: inert(), classes: inert(), chats: inert(), insights: inert(), problems: inert() },
     student: { auth: inert(), sessions: inert() },
-    shared: { profile: inert(), sessionStream: inert(), liveBoard: inert(), quizzes: inert() },
+    shared: { profile: inert(), sessionStream: inert(), liveBoard: inert(), quizzes: inert(), problems: inert() },
   };
   return createRouteGroups(
     services,

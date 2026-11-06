@@ -16,6 +16,8 @@ import { studentSessionRoutes } from "./student/sessions.routes.js";
 import { teacherAuthRoutes } from "./teacher/auth.routes.js";
 import { teacherChatRoutes } from "./teacher/chats.routes.js";
 import { teacherClassRoutes } from "./teacher/classes.routes.js";
+import { teacherInsightsRoutes } from "./teacher/insights.routes.js";
+import { teacherProblemRoutes } from "./teacher/problems.routes.js";
 import { teacherSessionRoutes } from "./teacher/sessions.routes.js";
 import type { RouteGroup } from "./types.js";
 
@@ -50,11 +52,13 @@ export function createRouteGroups(services: Services, limits: Limits): RouteGrou
     // teacher (admins too): log in, see classes, run live sessions
     teacherAuthRoutes(services.teacher.auth, limits),
     teacherClassRoutes(services.teacher.classes),
-    teacherSessionRoutes(services.teacher.sessions, services.shared.quizzes),
+    teacherInsightsRoutes(services.teacher.insights),
+    teacherProblemRoutes(services.teacher.problems),
+    teacherSessionRoutes(services.teacher.sessions, services.shared.quizzes, services.shared.problems),
     teacherChatRoutes(services.teacher.chats, limits.upload),
     // student: log in, join a live session
     studentAuthRoutes(services.student.auth, limits),
-    studentSessionRoutes(services.student.sessions, limits, services.shared.quizzes),
+    studentSessionRoutes(services.student.sessions, limits, services.shared.quizzes, services.shared.problems),
     // shared: used by more than one role
     sharedAuthRoutes(services.shared.profile),
     sessionEventsRoutes(services.shared.sessionStream, services.shared.liveBoard),

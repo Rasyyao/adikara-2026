@@ -2,7 +2,8 @@
  * The one and only seeder. Run it with:  pnpm seed
  *
  * Development (default): creates an admin, a teacher, a class and two students, all with
- * the password below, so the examples in Swagger (/docs) work right away.
+ * the password below, so the examples in Swagger (/docs) work right away, plus demo block
+ * problems for the teacher (see seed-problems.ts).
  * Production (NODE_ENV=production): creates only the admin, and SEED_ADMIN_EMAIL /
  * SEED_ADMIN_PASSWORD are required.
  *
@@ -14,6 +15,8 @@ import { createPrisma } from "../src/db/prisma.js";
 import type { PrismaClient } from "../src/generated/prisma/client.js";
 import { parseEmail, validatePasswordStrength } from "../src/http/validators/shared/common.js";
 import { hashPassword } from "../src/lib/password.js";
+import { seedRichDemoEnvironment } from "./seed-demo-rich.js";
+import { seedDemoProblems } from "./seed-problems.js";
 
 /** Password of every development account. Matches the examples in the Swagger docs. */
 export const DEV_PASSWORD = "ChangeMe-123";
@@ -34,6 +37,8 @@ export interface SeedOptions {
   /** Create the teacher, class and students too (never in production). */
   devAccounts: boolean;
   bcryptCost: number;
+  /** Include extra demo students in KELAS7A for rich demo analytics. */
+  includeExtraStudents?: boolean;
 }
 
 export function readSeedOptions(env: NodeJS.ProcessEnv): SeedOptions {
@@ -59,6 +64,8 @@ export interface SeedSummary {
   teacher?: string;
   classCode?: string;
   students: string[];
+  /** Demo materials and block problems of the teacher. */
+  demo?: { materials: number; problems: number };
 }
 
 export async function runSeed(prisma: PrismaClient, options: SeedOptions): Promise<SeedSummary> {
@@ -95,8 +102,17 @@ export async function runSeed(prisma: PrismaClient, options: SeedOptions): Promi
     });
   }
 
+  const demo = await seedDemoProblems(prisma, teacher.id);
+  await seedRichDemoEnvironment(prisma, {
+    teacherId: teacher.id,
+    classId: classroom.id,
+    passwordHash,
+    includeExtraStudents: options.includeExtraStudents,
+  });
+
   return {
     admin: options.adminEmail,
+    demo,
     teacher: teacherData.email,
     classCode: classData.classCode,
     students: students.map((s) => s.username),
@@ -104,7 +120,7 @@ export async function runSeed(prisma: PrismaClient, options: SeedOptions): Promi
 }
 
 async function main() {
-  const options = readSeedOptions(process.env);
+  const options = { ...readSeedOptions(process.env), includeExtraStudents: true };
   const prisma = createPrisma(process.env.DATABASE_URL ?? "");
   try {
     const summary = await runSeed(prisma, options);
@@ -112,6 +128,7 @@ async function main() {
     if (summary.teacher) console.log(`teacher:  ${summary.teacher}`);
     if (summary.classCode) console.log(`class:    ${summary.classCode}`);
     if (summary.students.length > 0) console.log(`students: ${summary.students.join(", ")}`);
+    if (summary.demo) console.log(`demo:     ${summary.demo.problems} block problems in ${summary.demo.materials} materials`);
     if (options.devAccounts) console.log(`password of the development accounts: ${DEV_PASSWORD}`);
   } finally {
     await prisma.$disconnect();

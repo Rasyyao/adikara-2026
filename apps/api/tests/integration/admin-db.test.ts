@@ -36,6 +36,7 @@ describe.skipIf(!safe)("admin management against a real database", () => {
     await prisma.classSession.deleteMany();
     await prisma.student.deleteMany();
     await prisma.classroom.deleteMany();
+    await prisma.chat.deleteMany(); // the seed adds demo materials (block problems go with their teacher)
     await prisma.teacher.deleteMany();
     const passwordHash = await hashPassword("Password-1", 4);
     admin = await prisma.teacher.create({ data: { email: "admin@example.com", name: "Admin", role: "ADMIN", passwordHash } });

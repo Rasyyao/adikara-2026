@@ -8,7 +8,8 @@ const NAV: NavItem[] = [
   { href: "/teacher", label: "Dashboard", icon: "dashboard" },
   { href: "/teacher/classes", label: "Kelas", icon: "classes", alsoActiveOn: ["/teacher/sessions"] },
   { href: "/teacher/materials", label: "Materi", icon: "materials" },
-  { href: "/teacher/history", label: "Riwayat sesi", icon: "history", badge: 7 },
+  { href: "/teacher/problems", label: "Soal blok", icon: "problems" },
+  { href: "/teacher/history", label: "Riwayat sesi", icon: "history" },
 ];
 
 export default function TeacherLayout({ children }: LayoutProps<"/teacher">) {

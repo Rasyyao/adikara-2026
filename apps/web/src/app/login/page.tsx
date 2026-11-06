@@ -11,18 +11,18 @@ export default function Home() {
       <BoardBackground />
       {/* One card, split 50:50. Below lg only the form half is shown, so it comes first on phones. */}
       <div className="grid w-full max-w-[1040px] overflow-hidden rounded-lg border border-border bg-surface lg:grid-cols-2">
-        <section aria-label="Tentang Adikara" className="hidden flex-col justify-between gap-8 border-r border-border p-8 lg:flex">
+        <section aria-label="Tentang NusaCodeAI" className="hidden flex-col justify-between gap-8 border-r border-border p-8 lg:flex">
           <div className="flex flex-col gap-3">
             <Logo />
-            <h2 className="text-display font-semibold">Satu PIN, seluruh kelas langsung masuk.</h2>
+            <h2 className="text-display font-semibold">Belajar algoritma &amp; koding interaktif bersama AI.</h2>
             <p className="text-body text-muted">
-              Guru membuka sesi dan menampilkan PIN. Siswa memasukkannya di ponsel, dan kehadiran tercatat otomatis.
+              Susun materi, mindmap, dan visualisasi alur algoritma dengan AI, mengajar di papan tulis kolaboratif secara real-time, serta uji pemahaman lewat kuis dan latihan soal blok maupun JavaScript.
             </p>
           </div>
           <IntroIllustration />
         </section>
 
-        <section className="flex flex-col gap-6 p-6 sm:p-8">
+        <section className="flex flex-col justify-center gap-6 p-6 sm:p-8">
           <div className="lg:hidden">
             <Logo />
           </div>

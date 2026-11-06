@@ -13,11 +13,21 @@ function problem(status: number, code: string, message: string) {
   return Response.json({ error: { code, message } }, { status });
 }
 
+function areaOf(request: NextRequest): "staff" | "student" | undefined {
+  const role = request.nextUrl.searchParams.get("role");
+  if (role === "teacher" || role === "staff") return "staff";
+  if (role === "student") return "student";
+  const referer = request.headers.get("referer") ?? "";
+  if (referer.includes("/teacher/")) return "staff";
+  if (referer.includes("/student/")) return "student";
+  return undefined;
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isUuid(id)) return problem(400, "validation_error", "Invalid session id");
 
-  const token = await getToken();
+  const token = await getToken(areaOf(request));
   if (!token) return problem(401, "unauthorized", "Not logged in");
 
   const body = await request.text();

@@ -6,13 +6,15 @@ import type { StudentSessionService } from "../../services/student/session.servi
 import { errorDoc } from "../docs-helpers.js";
 import type { RouteGroup } from "../types.js";
 import { studentQuizRoutes } from "./quizzes.routes.js";
+import { studentSessionProblemRoutes } from "./session-problems.routes.js";
+import type { SessionProblemService } from "../../services/shared/session-problem.service.js";
 import type { QuizService } from "../../services/shared/quiz.service.js";
 
-export function studentSessionRoutes(service: StudentSessionService, limits: { join: RequestHandler }, quizzes: QuizService): RouteGroup {
+export function studentSessionRoutes(service: StudentSessionService, limits: { join: RequestHandler }, quizzes: QuizService, problems: SessionProblemService): RouteGroup {
   return {
     role: "student",
     feature: "sessions",
-    description: "Join the live session your teacher started, with its PIN, and take the quizzes the teacher puts on the board.",
+    description: "Join the live session your teacher started, with its PIN, take the quizzes the teacher puts on the board, and solve the problems the teacher sends.",
     routes: [
       {
         method: "post",
@@ -38,6 +40,7 @@ export function studentSessionRoutes(service: StudentSessionService, limits: { j
         },
       },
       ...studentQuizRoutes(quizzes),
+      ...studentSessionProblemRoutes(problems),
     ],
   };
 }

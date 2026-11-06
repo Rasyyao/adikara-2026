@@ -1,5 +1,5 @@
 {
-  "name": "adikara",
+  "name": "nusacodeai",
   "private": true,
   "scripts": {
     "install:all": "pnpm --dir apps/api install && pnpm --dir apps/web install",

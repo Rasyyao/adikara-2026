@@ -41,6 +41,13 @@ export function Modal({ open, onClose, labelledBy, describedBy, role = "dialog",
     return () => clearTimeout(timer);
   }, [open]);
 
+  // A dialog that navigates away stays open in a page Next keeps hidden, and a modal dialog makes everything else
+  // inert. Close it when the page is hidden or unmounted; the effect above opens it again if the page comes back.
+  useEffect(() => {
+    const dialog = ref.current;
+    return () => dialog?.close();
+  }, []);
+
   return (
     <dialog
       ref={ref}

@@ -58,6 +58,7 @@ enum DiagnosisStatus {
 enum JobType {
   EXTRACT          @map("extract")
   GENERATE_PACKAGE @map("generate_package")
+  GENERATE_PROBLEM @map("generate_problem")
   CHAT_REPLY       @map("chat_reply")
 
   @@map("job_type")
@@ -96,6 +97,7 @@ model Teacher {
   chats        Chat[]
   materials    Material[]
   packages     Package[]
+  problems     BlockProblem[]
 
   @@index([role])
   @@map("teachers")
@@ -133,6 +135,7 @@ model Student {
   diagnoses           Diagnosis[]
   sessionParticipants SessionParticipant[]
   quizAttempts        QuizAttempt[]
+  problemAttempts     ProblemAttempt[]
 
   @@index([classId])
   @@map("students")
@@ -168,6 +171,7 @@ model ClassSession {
   chat         Chat?                @relation(fields: [chatId], references: [id], onDelete: SetNull)
   board        SessionBoard?
   quizzes      SessionQuiz[]
+  problems     SessionProblem[]
 
   @@index([classId, status])
   @@index([teacherId])
@@ -274,6 +278,81 @@ model QuizResponse {
   @@map("quiz_responses")
 }
 
+// ---------- Soal pemecahan masalah (blok) ----------
+
+/// A problem-solving exercise a teacher drafts: a story and one challenge, solved with blocks (arrange the given
+/// blocks, distractors included, into the answer) and/or JavaScript (a function that passes the teacher's tests).
+/// `challenge` holds both; see lib/block-puzzle.ts.
+/// `chatId` is the material it belongs to. An AI draft is written by the worker (job `generate_problem`): `generation`
+/// is "pending" until then, "failed" (with `generationError`, safe to show) when it could not be made, else null.
+model BlockProblem {
+  id              String        @id @default(uuid()) @db.Uuid
+  teacherId       String        @map("teacher_id") @db.Uuid
+  chatId          String?       @map("chat_id") @db.Uuid
+  title           String
+  story           String        @default("")
+  status          ContentStatus @default(DRAF)
+  challenge       Json
+  origin          String        @default("manual") // manual | ai
+  aiFocus         String?       @map("ai_focus")
+  generation      String?
+  generationError String?       @map("generation_error")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  teacher         Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  chat            Chat?         @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  sent            SessionProblem[]
+
+  @@index([teacherId, updatedAt])
+  @@index([chatId])
+  @@map("block_problems")
+}
+
+/// A problem the teacher sent to the class during a session; it pops up on every student's screen. `challenge` is a
+/// frozen copy, so editing the problem later never changes what the class solved.
+model SessionProblem {
+  id        String           @id @default(uuid()) @db.Uuid
+  sessionId String           @map("session_id") @db.Uuid
+  problemId String?          @map("problem_id") @db.Uuid
+  title     String
+  story     String
+  challenge Json
+  status    QuizStatus       @default(OPEN)
+  openedAt  DateTime         @default(now()) @map("opened_at") @db.Timestamptz
+  closedAt  DateTime?        @map("closed_at") @db.Timestamptz
+  session   ClassSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  problem   BlockProblem?    @relation(fields: [problemId], references: [id], onDelete: SetNull)
+  attempts  ProblemAttempt[]
+
+  @@index([sessionId])
+  @@map("session_problems")
+}
+
+/// One student's work on a sent problem: the last block arrangement and code, how often each was checked, and when
+/// and how (`solvedWith`: blocks | code) it was first solved. Code is run in the student's browser; `codePassed` is
+/// what it reported.
+model ProblemAttempt {
+  id          String         @id @default(uuid()) @db.Uuid
+  problemId   String         @map("problem_id") @db.Uuid
+  studentId   String         @map("student_id") @db.Uuid
+  startedAt   DateTime       @default(now()) @map("started_at") @db.Timestamptz
+  updatedAt   DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  solvedAt    DateTime?      @map("solved_at") @db.Timestamptz
+  solvedWith  String?        @map("solved_with")
+  blockChecks Int            @default(0) @map("block_checks")
+  blockAnswer Json?          @map("block_answer")
+  codeRuns    Int            @default(0) @map("code_runs")
+  code        String?
+  codePassed  Int?           @map("code_passed")
+  codeTotal   Int?           @map("code_total")
+  problem     SessionProblem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  student     Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([problemId, studentId])
+  @@index([studentId])
+  @@map("problem_attempts")
+}
+
 // ---------- Chat dan RAG per chat ----------
 
 enum ChatRole {
@@ -295,6 +374,7 @@ model Chat {
   messages  ChatMessage[]
   materials ChatMaterial[]
   sessions  ClassSession[]
+  problems  BlockProblem[]
 
   @@index([teacherId])
   @@map("chats")

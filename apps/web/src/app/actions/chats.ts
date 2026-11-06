@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { ApiError } from "@/lib/api/errors";
 import { teacherChatsApi } from "@/lib/api/endpoints";
 import type { ChatView, MaterialView, MessageView } from "@/lib/api/types";
-import { requireViewer } from "@/lib/auth/dal";
+import { requireActionToken } from "@/lib/auth/dal";
 import { isUuid } from "@/lib/validation/auth";
 import type { ActionResult } from "./sessions";
 
@@ -27,6 +27,9 @@ function describeChatError(error: unknown): string {
         if (typeof details.text === "string") return `Pesan tidak valid: ${details.text}`;
         return "Isian pesan atau berkas belum sesuai.";
       }
+      case "unauthorized":
+      case "forbidden":
+        return "Sesi masuk telah berakhir. Muat ulang halaman.";
     }
     if (error.status === 429) return "Terlalu banyak permintaan. Tunggu sebentar, lalu coba lagi.";
   }
@@ -41,8 +44,6 @@ export async function sendChatMessageAction(formData: FormData): Promise<
     replyPending: boolean;
   }>
 > {
-  const { token } = await requireViewer("staff");
-
   const rawChatId = formData.get("chat_id");
   const rawTitle = formData.get("title");
   const rawText = formData.get("text");
@@ -55,6 +56,7 @@ export async function sendChatMessageAction(formData: FormData): Promise<
   const file = rawFile instanceof File && rawFile.size > 0 ? rawFile : null;
 
   try {
+    const token = await requireActionToken("staff");
     let chat: ChatView;
     if (typeof rawChatId === "string" && isUuid(rawChatId)) {
       chat = { id: rawChatId, title: title ?? "Percakapan materi", created_at: new Date().toISOString() };
@@ -95,10 +97,10 @@ export async function pollChatAction(
     replyPending: boolean;
   }>
 > {
-  const { token } = await requireViewer("staff");
   if (!isUuid(chatId)) return { ok: false, message: "ID percakapan tidak valid." };
 
   try {
+    const token = await requireActionToken("staff");
     const [detail, messagesRes] = await Promise.all([
       teacherChatsApi.get(token, chatId),
       teacherChatsApi.messages(token, chatId, { limit: 100, after: after && isUuid(after) ? after : undefined }),
@@ -115,10 +117,10 @@ export async function pollChatAction(
 }
 
 export async function stopChatReplyAction(chatId: string): Promise<ActionResult> {
-  const { token } = await requireViewer("staff");
   if (!isUuid(chatId)) return { ok: false, message: "ID percakapan tidak valid." };
 
   try {
+    const token = await requireActionToken("staff");
     await teacherChatsApi.stop(token, chatId);
     return { ok: true };
   } catch (error) {
@@ -127,10 +129,10 @@ export async function stopChatReplyAction(chatId: string): Promise<ActionResult>
 }
 
 export async function editMessageAction(chatId: string, messageId: string, content: string): Promise<ActionResult<{ saved: MessageView }>> {
-  const { token } = await requireViewer("staff");
   if (!isUuid(chatId) || !isUuid(messageId)) return { ok: false, message: "Pesan tidak valid." };
 
   try {
+    const token = await requireActionToken("staff");
     const result = await teacherChatsApi.editMessage(token, chatId, messageId, content);
     return { ok: true, saved: result.message };
   } catch (error) {
@@ -139,10 +141,10 @@ export async function editMessageAction(chatId: string, messageId: string, conte
 }
 
 export async function deleteChatAction(chatId: string): Promise<ActionResult> {
-  const { token } = await requireViewer("staff");
   if (!isUuid(chatId)) return { ok: false, message: "ID percakapan tidak valid." };
 
   try {
+    const token = await requireActionToken("staff");
     await teacherChatsApi.remove(token, chatId);
     revalidatePath("/teacher/materials");
     return { ok: true };

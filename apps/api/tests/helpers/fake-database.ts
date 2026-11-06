@@ -5,6 +5,8 @@ import type { Role } from "../../src/types/auth.types.js";
 import type { ClassRow } from "../../src/types/shared/class.types.js";
 import type { ParticipantRecord, SessionRecord } from "../../src/types/shared/session.types.js";
 import type { BoardRecord } from "../../src/types/teacher/session.types.js";
+import { createFakeProblemRepository } from "./fake-problem-repository.js";
+import { createFakeSessionProblemRepository } from "./fake-session-problem-repository.js";
 import { createFakeQuizRepository } from "./fake-quiz-repository.js";
 import type { ChatMaterialRow, ChatMessageRow, ChatRow, NewMaterial } from "../../src/types/teacher/chat.types.js";
 
@@ -84,6 +86,8 @@ export interface FakeDatabase {
   /** The queue: what the API would insert into `jobs`, in order. `notified` counts the NOTIFYs sent after a commit. */
   jobs: { type: "EXTRACT" | "CHAT_REPLY"; payload: Record<string, string>; status: "QUEUED" | "RUNNING" | "DONE" | "FAILED" }[];
   queue: { notified: number };
+  /** Block problems, with the generation jobs the API queued and the stored rows (a test plays the AI worker on them). */
+  problems: ReturnType<typeof createFakeProblemRepository>;
 }
 
 const CREATED = new Date("2026-01-01T00:00:00.000Z");
@@ -150,6 +154,7 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
   const materials: FakeDatabase["materials"] = new Map();
   const jobs: FakeDatabase["jobs"] = [];
   const queue = { notified: 0 };
+  const problems = createFakeProblemRepository(chats, materials);
   const key = (sessionId: string, studentId: string) => `${sessionId}:${studentId}`;
 
   const accountOf = (t: { id: string; role: Role; name: string | null; passwordHash: string | null }) => ({
@@ -187,6 +192,9 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
   const classHasSessions = (classId: string) => [...sessions.values()].some((s) => s.classId === classId);
   const classStudents = (classId: string) => [...studentsById.values()].filter((s) => s.classId === classId);
   const liveSessionIds = () => new Set([...sessions.values()].filter((s) => s.status !== "ENDED").map((s) => s.id));
+
+  const quizzes = createFakeQuizRepository((id) => studentsById.get(id));
+  const sessionProblems = createFakeSessionProblemRepository((id) => studentsById.get(id));
 
   const repositories: Repositories = {
     admin: {
@@ -444,6 +452,36 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
           return record;
         },
       },
+      insights: {
+        async loadActivity(teacherId, sessionLimit) {
+          const own = [...sessions.values()]
+            .filter((s) => !teacherId || s.teacherId === teacherId)
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+            .slice(0, sessionLimit);
+          const quizRows = (await Promise.all(own.map((s) => quizzes.listQuizzes(s.id)))).flat();
+          return {
+            classes: [...classesById.values()]
+              .filter((c) => !c.archived && (!teacherId || c.teacherId === teacherId))
+              .sort(byNameThenId((c) => c.name))
+              .map((c) => ({ id: c.id, name: c.name, studentCount: classStudents(c.id).length })),
+            sessions: own.map((s) => ({
+              id: s.id,
+              classId: s.classId,
+              status: s.status,
+              startedAt: s.startedAt,
+              endedAt: s.endedAt,
+              createdAt: s.createdAt,
+              materialId: s.chatId,
+              materialTitle: s.chatId ? (chats.get(s.chatId)?.title ?? null) : null,
+              participants: [...participants.values()]
+                .filter((p) => p.sessionId === s.id && !p.kickedAt)
+                .map((p) => ({ studentId: p.studentId, name: p.name, username: p.username })),
+            })),
+            quizzes: await Promise.all(quizRows.map(async (quiz) => ({ quiz, attempts: await quizzes.listAttempts(quiz.id) }))),
+          };
+        },
+      },
+      problems,
     },
 
     student: {
@@ -514,9 +552,10 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
           return participantRecord(row);
         },
       },
-      quizzes: createFakeQuizRepository((id) => studentsById.get(id)),
+      quizzes,
+      problems: sessionProblems,
     },
   };
 
-  return { repositories, teachersById, studentsById, classesById, sessions, participants, studentsWithRecords, teachersWithData, chats, chatMessages, materials, jobs, queue };
+  return { repositories, problems, teachersById, studentsById, classesById, sessions, participants, studentsWithRecords, teachersWithData, chats, chatMessages, materials, jobs, queue };
 }

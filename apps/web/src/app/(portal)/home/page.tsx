@@ -4,7 +4,7 @@ import { CenteredLoader } from "@/components/ui/loaders";
 import { getViewer, homeFor } from "@/lib/auth/dal";
 
 async function Dispatch(): Promise<never> {
-  const viewer = await getViewer();
+  const viewer = await getViewer().catch(() => null);
   redirect(viewer ? homeFor(viewer.user.role) : "/session-expired");
 }
 

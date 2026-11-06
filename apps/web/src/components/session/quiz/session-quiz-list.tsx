@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, ClipboardList } from "lucide-react";
+import { Activity, BarChart3, ClipboardList } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listQuizzesAction } from "@/app/actions/quizzes";
 import type { QuizView } from "@/lib/api/types";
@@ -48,7 +48,7 @@ export function SessionQuizList({ sessionId, channel }: { sessionId: string; cha
           <ClipboardList size={20} strokeWidth={1.75} className="text-primary" aria-hidden="true" />
           Kuis sesi ini
         </h2>
-        <p className="mt-1 text-small text-muted">Buka papan dalam layar penuh, tekan Materi, lalu Tempel ke papan sebagai kuis. Siswa scan QR atau klik kartunya.</p>
+        <p className="mt-1 text-small text-muted">Buka Papan tulis, tekan Materi, lalu Tempel ke papan sebagai kuis. Siswa scan QR atau klik kartunya, dan Anda bisa memantau siapa yang sudah selesai di sini.</p>
       </div>
       {items === null ? (
         <p className="text-small text-muted">Memuat…</p>
@@ -56,25 +56,46 @@ export function SessionQuizList({ sessionId, channel }: { sessionId: string; cha
         <p className="rounded-md border border-dashed border-border p-3 text-small text-muted">Belum ada kuis di sesi ini.</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {items.map((quiz) => (
-            <li key={quiz.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-small font-semibold text-ink">{quiz.title}</p>
-                <p className="text-caption text-muted">
-                  {quiz.question_count} soal · {quiz.started} mulai · {quiz.submitted} selesai ·{" "}
-                  <span className={quiz.status === "open" ? "font-semibold text-success" : ""}>{quiz.status === "open" ? "Dibuka" : "Ditutup"}</span>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(quiz.id)}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-border px-3 text-caption font-semibold text-ink hover:border-primary hover:text-primary"
-              >
-                <BarChart3 size={14} strokeWidth={2} aria-hidden="true" />
-                Lihat hasil
-              </button>
-            </li>
-          ))}
+          {[...items].reverse().map((quiz) => {
+            const live = quiz.status === "open";
+            const share = quiz.started ? Math.round((quiz.submitted / quiz.started) * 100) : 0;
+            return (
+              <li key={quiz.id} className={`flex flex-col gap-2 rounded-lg border p-3 ${live ? "border-success/40 bg-success/5" : "border-border"}`}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-2 text-small font-semibold text-ink">
+                      {live && <span className="size-2 shrink-0 rounded-full bg-success motion-safe:animate-pulse" aria-hidden="true" />}
+                      <span className="truncate">{quiz.title}</span>
+                    </p>
+                    <p className="text-caption text-muted">
+                      {quiz.question_count} soal · {quiz.started} mulai · {quiz.submitted} selesai ·{" "}
+                      <span className={live ? "font-semibold text-success" : ""}>{live ? "Dibuka" : "Ditutup"}</span>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(quiz.id)}
+                    className={`inline-flex min-h-9 items-center gap-1.5 rounded-md px-3 text-caption font-semibold transition-colors ${
+                      live ? "bg-primary text-white hover:bg-primary-hover" : "border border-border text-ink hover:border-primary hover:text-primary"
+                    }`}
+                  >
+                    {live ? <Activity size={14} strokeWidth={2} aria-hidden="true" /> : <BarChart3 size={14} strokeWidth={2} aria-hidden="true" />}
+                    Lihat hasil
+                  </button>
+                </div>
+                {live && quiz.started > 0 && (
+                  <div className="flex items-center gap-2" aria-label={`${quiz.submitted} dari ${quiz.started} siswa yang mulai sudah selesai`}>
+                    <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface">
+                      <span className="block h-full rounded-full bg-success transition-[width] duration-300" style={{ width: `${share}%` }} />
+                    </span>
+                    <span className="shrink-0 text-caption tabular-nums text-muted">
+                      {quiz.submitted}/{quiz.started} selesai
+                    </span>
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {open && <QuizResultsPanel sessionId={sessionId} quizId={open} channel={channel} onClosedQuiz={() => void load()} onClose={() => setOpen(null)} />}

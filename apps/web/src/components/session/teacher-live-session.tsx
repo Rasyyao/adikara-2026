@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Check, Copy, ExternalLink, Lock, LockOpen, PenTool, Play, UserMinus, Users } from "lucide-react";
+import { ArrowLeft, BookOpen, Check, Copy, ExternalLink, KeyRound, Lock, LockOpen, PenTool, Play, UserMinus, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
@@ -19,9 +19,9 @@ import type { BoardScene, ChatView, ParticipantView, SessionMaterial, SessionSta
 import { ConnectionBadge } from "./connection-badge";
 import { createLiveChannel, liveEventOf } from "./board/live-sync";
 import type { BoardMaterialInfo } from "./board/material-panel";
+import { SessionProblems } from "./problems/session-problems";
 import { SessionQuizList } from "./quiz/session-quiz-list";
 import { SessionWhiteboard } from "./session-whiteboard";
-import { BackLink } from "./back-link";
 import { StatusChip } from "./status-chip";
 import { useSessionStream, type StreamHandler } from "./use-session-stream";
 
@@ -115,7 +115,7 @@ export function TeacherLiveSession({ sessionId, className, initial, materials, b
     [liveBoard, router],
   );
 
-  const streamStatus = useSessionStream(sessionId, onEvent);
+  const streamStatus = useSessionStream(sessionId, onEvent, "teacher");
 
   function run(action: () => Promise<ActionResult>, done?: () => void) {
     startTransition(async () => {
@@ -150,12 +150,30 @@ export function TeacherLiveSession({ sessionId, className, initial, materials, b
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-3">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <BackLink />
-          <h1 className="mt-2 text-h1 font-semibold">{className}</h1>
-          <p className="mt-1 text-body text-muted">Sesi sedang dibuka. Tampilkan PIN dan pantau siswa yang masuk.</p>
+        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+          <Link
+            href="/teacher/classes"
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-small font-semibold text-muted transition-colors duration-150 ease-out hover:bg-surface hover:text-ink"
+          >
+            <ArrowLeft size={18} strokeWidth={1.75} aria-hidden="true" />
+            <span>Kembali ke kelas</span>
+          </Link>
+          <span className="h-5 w-px bg-border" aria-hidden="true" />
+          <h1 className="text-h2 font-semibold text-ink">{className}</h1>
+          {view === "board" && live.joinCode && (
+            <button
+              type="button"
+              onClick={copyPin}
+              title="Klik untuk menyalin PIN sesi"
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-primary/30 bg-primary-tint px-2.5 text-caption font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+            >
+              <KeyRound size={13} strokeWidth={2} aria-hidden="true" />
+              <span className="font-mono tracking-wider">PIN: {live.joinCode.split("").join(" ")}</span>
+              {copied ? <Check size={13} strokeWidth={2} aria-hidden="true" /> : <Copy size={13} strokeWidth={2} aria-hidden="true" />}
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusChip status={live.status} />
@@ -163,157 +181,242 @@ export function TeacherLiveSession({ sessionId, className, initial, materials, b
         </div>
       </header>
 
-      <div role="tablist" aria-label="Tampilan sesi" className="flex gap-2">
-        {(
-          [
-            { id: "control", label: "Kontrol sesi", Icon: Users },
-            { id: "board", label: "Papan tulis", Icon: PenTool },
-          ] as const
-        ).map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={view === id}
-            onClick={() => setView(id)}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-body font-semibold transition-colors ${
-              view === id ? "border-primary bg-surface text-primary" : "border-border bg-bg text-muted hover:border-primary/50 hover:text-ink"
-            }`}
-          >
-            <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div role="tablist" aria-label="Tampilan sesi" className="flex gap-1.5 rounded-lg border border-border bg-surface p-1">
+          {(
+            [
+              { id: "control", label: "Kontrol sesi", Icon: Users },
+              { id: "board", label: "Papan tulis", Icon: PenTool },
+            ] as const
+          ).map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={view === id}
+              onClick={() => setView(id)}
+              className={`inline-flex min-h-9 items-center gap-2 rounded-md px-3.5 text-small font-semibold transition-colors ${
+                view === id ? "bg-primary text-white shadow-sm" : "text-muted hover:bg-bg hover:text-ink"
+              }`}
+            >
+              <Icon size={16} strokeWidth={1.75} aria-hidden="true" />
+              <span>{label}</span>
+              {id === "control" && (
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[11px] font-semibold ${
+                    view === id ? "bg-white/20 text-white" : "bg-bg text-muted"
+                  }`}
+                >
+                  {joined.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {view === "board" && live.status === "LOBBY" && (
+            <Button onClick={() => run(() => startSessionAction(sessionId))} loading={pending} className="min-h-10 px-3 text-small">
+              <Play size={16} strokeWidth={2} aria-hidden="true" />
+              Mulai sesi ({joined.length} siswa menunggu)
+            </Button>
+          )}
+          {live.status !== "ENDED" && (
+            <SessionProblems sessionId={sessionId} materialId={material?.id ?? null} channel={liveBoard} live={live.status === "ACTIVE"} />
+          )}
+        </div>
       </div>
 
       {/* The board stays mounted while hidden, so the drawing, zoom and undo history survive a switch of tab */}
       <div className={view === "board" ? "" : "hidden"}>
-        <SessionWhiteboard sessionId={sessionId} initial={board} material={materialInfo} live={live.status === "ENDED" ? null : { channel: liveBoard, role: "teacher" }} />
+        <SessionWhiteboard
+          sessionId={sessionId}
+          initial={board}
+          material={materialInfo}
+          live={live.status === "ENDED" ? null : { channel: liveBoard, role: "teacher" }}
+        />
       </div>
 
-      <div className={`grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] ${view === "control" ? "" : "hidden"}`}>
-        <section aria-label="PIN sesi" className="flex flex-col gap-4 rounded-lg bg-surface p-6">
-          <div>
-            <h2 className="text-h3 font-semibold">PIN untuk siswa</h2>
-            <p className="mt-1 text-small text-muted">Tampilkan PIN ini di papan. Siswa memasukkannya setelah masuk sebagai Siswa.</p>
+      <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] ${view === "control" ? "" : "hidden"}`}>
+        <section aria-label="PIN sesi" className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-5">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h2 className="text-h3 font-semibold text-ink">PIN untuk siswa</h2>
+              <p className="mt-0.5 text-small text-muted">
+                {live.status === "LOBBY"
+                  ? "Tampilkan PIN ini di proyektor. Setelah siswa masuk, klik Mulai sesi."
+                  : "Sesi sedang aktif. Siswa yang terlambat masih bisa masuk selama pintu terbuka."}
+              </p>
+            </div>
           </div>
-          <p
-            aria-label={`PIN ${live.joinCode?.split("").join(" ") ?? ""}`}
-            className="rounded-md border bg-primary-tint py-4 text-center font-mono text-display font-medium tracking-[0.3em] text-primary"
-          >
-            {live.joinCode ?? "—"}
-          </p>
-          <Button variant="secondary" onClick={copyPin} disabled={!live.joinCode}>
-            {copied ? <Check size={20} strokeWidth={1.75} aria-hidden="true" /> : <Copy size={20} strokeWidth={1.75} aria-hidden="true" />}
-            {copied ? "PIN tersalin" : "Salin PIN"}
-          </Button>
 
-          <hr className="border-border" />
+          <div className="flex flex-col gap-2.5 rounded-lg border border-primary/20 bg-primary-tint p-4">
+            <p
+              aria-label={`PIN ${live.joinCode?.split("").join(" ") ?? ""}`}
+              className="text-center font-mono text-display font-bold tracking-[0.3em] text-primary"
+            >
+              {live.joinCode ?? "—"}
+            </p>
+            <Button variant="secondary" onClick={copyPin} disabled={!live.joinCode} full className="bg-surface">
+              {copied ? <Check size={18} strokeWidth={1.75} aria-hidden="true" /> : <Copy size={18} strokeWidth={1.75} aria-hidden="true" />}
+              {copied ? "PIN tersalin" : "Salin PIN"}
+            </Button>
+          </div>
 
-          <div className="flex flex-col gap-3">
-            {live.status === "LOBBY" && (
-              <Button onClick={() => run(() => startSessionAction(sessionId))} loading={pending}>
-                <Play size={20} strokeWidth={1.75} aria-hidden="true" />
+          <div className="flex flex-col gap-2.5 pt-1">
+            {live.status === "LOBBY" ? (
+              <Button onClick={() => run(() => startSessionAction(sessionId))} loading={pending} full>
+                <Play size={18} strokeWidth={2} aria-hidden="true" />
                 Mulai sesi
               </Button>
+            ) : (
+              <Button onClick={() => setView("board")} full>
+                <PenTool size={18} strokeWidth={1.75} aria-hidden="true" />
+                Buka Papan tulis kelas
+              </Button>
             )}
-            <Button
-              variant="secondary"
-              onClick={() => run(() => setLockedAction(sessionId, !live.locked))}
-              disabled={pending}
-              aria-pressed={live.locked}
-            >
-              {live.locked ? <LockOpen size={20} strokeWidth={1.75} aria-hidden="true" /> : <Lock size={20} strokeWidth={1.75} aria-hidden="true" />}
-              {live.locked ? "Buka kunci pintu" : "Kunci pintu"}
-            </Button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => run(() => setLockedAction(sessionId, !live.locked))}
+                disabled={pending}
+                aria-pressed={live.locked}
+              >
+                {live.locked ? <LockOpen size={18} strokeWidth={1.75} aria-hidden="true" /> : <Lock size={18} strokeWidth={1.75} aria-hidden="true" />}
+                {live.locked ? "Buka kunci pintu" : "Kunci pintu"}
+              </Button>
+              <Button variant={live.status === "LOBBY" ? "secondary" : "danger"} onClick={() => setConfirm({ kind: "end" })} disabled={pending}>
+                Akhiri sesi
+              </Button>
+            </div>
             <p className="text-caption text-muted">
               {live.locked ? "Pintu terkunci: siswa baru ditolak, yang sudah masuk tetap bisa kembali." : "Pintu terbuka: siswa dengan PIN bisa masuk."}
             </p>
-            <Button variant={live.status === "LOBBY" ? "secondary" : "danger"} onClick={() => setConfirm({ kind: "end" })} disabled={pending}>
-              Akhiri sesi
-            </Button>
           </div>
         </section>
 
-        <div className="flex flex-col gap-6">
-        <section aria-label="Materi kelas" className="flex flex-col gap-3 rounded-lg bg-surface p-6">
-          <div className="flex items-center gap-2">
-            <BookOpen size={20} strokeWidth={1.75} aria-hidden="true" />
-            <h2 className="text-h3 font-semibold">Materi kelas</h2>
-          </div>
-          <p className="text-small text-muted">Pasang materi yang sudah Anda siapkan (berkas, mindmap, dan soal), lalu buka saat kelas berjalan.</p>
-          <select
-            aria-label="Materi untuk sesi ini"
-            value={material?.id ?? ""}
-            onChange={(event) => changeMaterial(event.target.value)}
-            disabled={pending}
-            className="block min-h-12 w-full rounded-md border border-border bg-surface px-4 text-body text-ink"
-          >
-            <option value="">Belum ada materi</option>
-            {material && !materials.some((m) => m.id === material.id) && <option value={material.id}>{material.title}</option>}
-            {materials.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
-          </select>
-          {material ? (
-            <Link
-              href={`/teacher/materials/${material.id}`}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-body font-semibold text-white transition-colors hover:bg-primary-hover"
+        <div className="flex flex-col gap-5">
+          <section aria-label="Siswa yang bergabung" className="rounded-lg border border-border bg-surface p-5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Users size={20} strokeWidth={1.75} className="text-primary" aria-hidden="true" />
+                <h2 className="text-h3 font-semibold text-ink">Siswa bergabung ({joined.length})</h2>
+              </div>
+              {live.participants.length > 0 && (
+                <span className="rounded-full bg-success/10 px-2.5 py-0.5 text-caption font-semibold text-success">
+                  {joined.length} aktif di kelas
+                </span>
+              )}
+            </div>
+
+            {live.participants.length === 0 ? (
+              <p className="mt-3 rounded-md border border-dashed border-border bg-bg p-5 text-center text-small text-muted">
+                Belum ada siswa. Nama mereka langsung muncul di sini begitu memasukkan PIN.
+              </p>
+            ) : (
+              <ul className="mt-3 flex max-h-[280px] flex-col divide-y divide-border overflow-y-auto">
+                {live.participants.map((student) => {
+                  const displayName = student.name ?? student.username ?? "Tanpa nama";
+                  const initialLetter = displayName.trim().charAt(0).toUpperCase() || "S";
+                  return (
+                    <li key={student.student_id} className="flex items-center justify-between gap-3 py-2.5">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span
+                          aria-hidden="true"
+                          className={`flex size-9 shrink-0 items-center justify-center rounded-full text-small font-bold ${
+                            student.state === "joined"
+                              ? "bg-primary-tint text-primary"
+                              : "bg-bg text-muted"
+                          }`}
+                        >
+                          {initialLetter}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-body font-semibold text-ink">{displayName}</p>
+                          <p className="flex items-center gap-1.5 text-caption text-muted">
+                            <span
+                              aria-hidden="true"
+                              className={`inline-block size-2 rounded-full ${
+                                student.state === "joined" ? "bg-success" : student.state === "left" ? "bg-warning" : "bg-danger"
+                              }`}
+                            />
+                            <span>
+                              {student.state === "joined" ? "Di dalam sesi" : student.state === "left" ? "Terputus" : "Dikeluarkan"}
+                              {student.username ? ` · ${student.username}` : ""}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                      {student.state !== "kicked" && live.status !== "ENDED" && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => setConfirm({ kind: "kick", student })}
+                          disabled={pending}
+                          aria-label={`Keluarkan ${student.name ?? student.username ?? "siswa"} dari sesi`}
+                          className="min-h-9 px-3 text-small"
+                        >
+                          <UserMinus size={18} strokeWidth={1.75} aria-hidden="true" />
+                          Keluarkan
+                        </Button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <p className="sr-only" aria-live="polite">
+              {announcement}
+            </p>
+          </section>
+
+          <section aria-label="Materi kelas" className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-5">
+            <div className="flex items-center gap-2">
+              <BookOpen size={20} strokeWidth={1.75} className="text-primary" aria-hidden="true" />
+              <h2 className="text-h3 font-semibold text-ink">Materi kelas</h2>
+            </div>
+            <p className="text-small text-muted">Pasang materi yang sudah Anda siapkan (berkas, mindmap, dan soal), lalu buka saat kelas berjalan.</p>
+            <select
+              aria-label="Materi untuk sesi ini"
+              value={material?.id ?? ""}
+              onChange={(event) => changeMaterial(event.target.value)}
+              disabled={pending}
+              className="block min-h-11 w-full rounded-md border border-border bg-surface px-3.5 text-body text-ink focus:border-primary focus:outline-none"
             >
-              <ExternalLink size={18} strokeWidth={1.75} aria-hidden="true" />
-              Buka materi: {material.title}
-            </Link>
-          ) : (
-            <p className="rounded-md border border-dashed border-border p-4 text-center text-small text-muted">
-              {materials.length === 0 ? "Anda belum punya materi. Buat dulu di menu Materi." : "Pilih materi di atas untuk dipakai di kelas ini."}
-            </p>
-          )}
-        </section>
-
-        <SessionQuizList sessionId={sessionId} channel={liveBoard} />
-
-        <section aria-label="Siswa yang bergabung" className="rounded-lg bg-surface p-6">
-          <div className="flex items-center gap-2">
-            <Users size={20} strokeWidth={1.75} aria-hidden="true" />
-            <h2 className="text-h3 font-semibold">Siswa bergabung ({joined.length})</h2>
-          </div>
-
-          {live.participants.length === 0 ? (
-            <p className="mt-6 rounded-md border border-dashed border-border p-6 text-center text-body text-muted">
-              Belum ada siswa. Nama mereka muncul di sini begitu memasukkan PIN.
-            </p>
-          ) : (
-            <ul className="mt-4 flex max-h-[480px] flex-col divide-y divide-border overflow-y-auto">
-              {live.participants.map((student) => (
-                <li key={student.student_id} className="flex items-center justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-body font-semibold">{student.name ?? student.username ?? "Tanpa nama"}</p>
-                    <p className="text-small text-muted">
-                      {student.state === "joined" ? "Di dalam sesi" : student.state === "left" ? "Terputus" : "Dikeluarkan"}
-                      {student.username ? ` · ${student.username}` : ""}
-                    </p>
-                  </div>
-                  {student.state !== "kicked" && live.status !== "ENDED" && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => setConfirm({ kind: "kick", student })}
-                      disabled={pending}
-                      aria-label={`Keluarkan ${student.name ?? student.username ?? "siswa"} dari sesi`}
-                    >
-                      <UserMinus size={20} strokeWidth={1.75} aria-hidden="true" />
-                      Keluarkan
-                    </Button>
-                  )}
-                </li>
+              <option value="">Belum ada materi</option>
+              {material && !materials.some((m) => m.id === material.id) && <option value={material.id}>{material.title}</option>}
+              {materials.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
               ))}
-            </ul>
-          )}
-          <p className="sr-only" aria-live="polite">
-            {announcement}
-          </p>
-        </section>
+            </select>
+            {material ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setView("board")}
+                  className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 text-small font-semibold text-white transition-colors hover:bg-primary-hover"
+                >
+                  <PenTool size={16} strokeWidth={1.75} aria-hidden="true" />
+                  Buka di Papan tulis
+                </button>
+                <Link
+                  href={`/teacher/materials/${material.id}`}
+                  className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3.5 text-small font-semibold text-ink transition-colors hover:border-primary hover:text-primary"
+                >
+                  <ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" />
+                  Buka materi: {material.title}
+                </Link>
+              </div>
+            ) : (
+              <p className="rounded-md border border-dashed border-border p-3.5 text-center text-small text-muted">
+                {materials.length === 0 ? "Anda belum punya materi. Buat dulu di menu Materi." : "Pilih materi di atas untuk dipakai di kelas ini."}
+              </p>
+            )}
+          </section>
+
+          <SessionQuizList sessionId={sessionId} channel={liveBoard} />
         </div>
       </div>
 

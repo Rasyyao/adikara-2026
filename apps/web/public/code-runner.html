@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Code runner</title>
+<script>
+  // Runs a student's JavaScript against test cases. Loaded in a sandboxed iframe (opaque origin: no cookies, no access
+  // to the page around it) with its own CSP (no network). Each run gets a fresh Worker, terminated when done or when it
+  // takes too long, so an endless loop never freezes the page.
+  "use strict";
+  const WORKER = `
+    "use strict";
+    const show = (v) => {
+      if (v === undefined) return "undefined";
+      if (typeof v === "string") return JSON.stringify(v);
+      if (typeof v === "number" && !Number.isFinite(v)) return String(v);
+      try { return JSON.stringify(v); } catch (e) { return String(v); }
+    };
+    const canonical = (v) => {
+      if (Array.isArray(v)) return "[" + v.map(canonical).join(",") + "]";
+      if (v && typeof v === "object") return "{" + Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + canonical(v[k])).join(",") + "}";
+      return show(v);
+    };
+    const describe = (error) => (error && error.name ? error.name + ": " : "") + (error && error.message ? error.message : String(error));
+    self.onmessage = (event) => {
+      const { code, fn, tests } = event.data;
+      const logs = [];
+      const log = (...parts) => { if (logs.length < 100) logs.push(parts.map((p) => (typeof p === "string" ? p : show(p))).join(" ").slice(0, 500)); };
+      const fakeConsole = { log, info: log, warn: log, error: log };
+      let target;
+      try {
+        target = new Function("console", code + "\\n;return typeof " + fn + " === 'function' ? " + fn + " : undefined;")(fakeConsole);
+      } catch (error) {
+        postMessage({ error: describe(error), logs, results: [] });
+        return;
+      }
+      if (typeof target !== "function") {
+        postMessage({ error: "Fungsi " + fn + " tidak ditemukan. Pastikan namanya sama persis.", logs, results: [] });
+        return;
+      }
+      const results = tests.map((test) => {
+        try {
+          const actual = target(...JSON.parse(JSON.stringify(test.args)));
+          return { pass: canonical(actual) === canonical(test.expected), actual: show(actual), error: null };
+        } catch (error) {
+          return { pass: false, actual: null, error: describe(error) };
+        }
+      });
+      postMessage({ error: null, logs, results });
+    };
+  `;
+  const workerUrl = URL.createObjectURL(new Blob([WORKER], { type: "text/javascript" }));
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent) return;
+    const { id, code, fn, tests, timeout } = event.data || {};
+    if (typeof id !== "string" || typeof code !== "string" || typeof fn !== "string" || !Array.isArray(tests)) return;
+    const reply = (result) => window.parent.postMessage({ id, result }, "*");
+    const limit = Math.min(Math.max(Number(timeout) || 3000, 500), 10000);
+    let worker;
+    try {
+      worker = new Worker(workerUrl);
+    } catch (error) {
+      reply({ error: "Kode tidak bisa dijalankan di peramban ini.", logs: [], results: [] });
+      return;
+    }
+    const timer = setTimeout(() => {
+      worker.terminate();
+      reply({ error: "Kode berjalan terlalu lama (lebih dari " + Math.round(limit / 1000) + " detik). Mungkin ada perulangan yang tidak pernah berhenti.", logs: [], results: [] });
+    }, limit);
+    worker.onmessage = (message) => {
+      clearTimeout(timer);
+      worker.terminate();
+      reply(message.data);
+    };
+    worker.onerror = (error) => {
+      clearTimeout(timer);
+      worker.terminate();
+      error.preventDefault();
+      reply({ error: error.message || "Kode gagal dijalankan.", logs: [], results: [] });
+    };
+    worker.postMessage({ code, fn, tests });
+  });
+  window.parent.postMessage({ ready: true }, "*");
+</script>

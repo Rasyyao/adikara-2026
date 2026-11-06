@@ -6,12 +6,14 @@ import type { TeacherSessionService } from "../../services/teacher/session.servi
 import { errorDoc } from "../docs-helpers.js";
 import type { RouteGroup } from "../types.js";
 import { teacherQuizRoutes } from "./quizzes.routes.js";
+import { teacherSessionProblemRoutes } from "./session-problems.routes.js";
+import type { SessionProblemService } from "../../services/shared/session-problem.service.js";
 import type { QuizService } from "../../services/shared/quiz.service.js";
 
 const SESSION_NOT_FOUND = errorDoc("session_not_found", "Session not found, or it belongs to another teacher.", "Session not found");
 const SESSION_ENDED = errorDoc("session_ended", "The session has already ended.", "The session has ended");
 
-export function teacherSessionRoutes(service: TeacherSessionService, quizzes: QuizService): RouteGroup {
+export function teacherSessionRoutes(service: TeacherSessionService, quizzes: QuizService, problems: SessionProblemService): RouteGroup {
   const idOf = (req: { params: Record<string, unknown> }) => parseUuidParam(req.params.id, "id");
 
   return {
@@ -219,6 +221,7 @@ export function teacherSessionRoutes(service: TeacherSessionService, quizzes: Qu
         },
       },
       ...teacherQuizRoutes(quizzes),
+      ...teacherSessionProblemRoutes(problems),
     ],
   };
 }

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   if (!isUuid(id)) return problem(400, "validation_error", "Invalid chat id");
 
-  const token = await getToken();
+  const token = await getToken("staff");
   if (!token) return problem(401, "unauthorized", "Not logged in");
 
   let upstream: Response;

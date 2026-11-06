@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -26,6 +27,15 @@ const fileCsp = [
   "frame-ancestors 'self'",
 ].join("; ");
 
+// The JavaScript runner for problems: student code runs here, in a sandboxed iframe of our own pages (opaque origin, so
+// no cookies and no access to the page), in a Worker it may eval. No network: connect-src falls back to 'none'.
+const runnerCsp = [
+  "default-src 'none'",
+  "script-src 'unsafe-inline' 'unsafe-eval' blob:",
+  "worker-src blob:",
+  "frame-ancestors 'self'",
+].join("; ");
+
 const nextConfig: NextConfig = {
   // the end-to-end tests run a second dev server next to yours, with its own build folder (`next dev` locks its own)
   distDir: process.env.NEXT_DIST_DIR || ".next",
@@ -38,6 +48,7 @@ const nextConfig: NextConfig = {
     },
   },
   turbopack: {
+    root: path.resolve(__dirname, "../.."),
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
@@ -61,6 +72,13 @@ const nextConfig: NextConfig = {
         source: "/api/chats/:id/materials/:materialId/file",
         headers: [
           { key: "Content-Security-Policy", value: fileCsp },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+        ],
+      },
+      {
+        source: "/code-runner.html",
+        headers: [
+          { key: "Content-Security-Policy", value: runnerCsp },
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
         ],
       },

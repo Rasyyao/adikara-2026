@@ -28,6 +28,7 @@ describe.skipIf(!safe)("seed + login against a real database", () => {
     await prisma.classSession.deleteMany();
     await prisma.student.deleteMany();
     await prisma.classroom.deleteMany();
+    await prisma.chat.deleteMany(); // the seed adds demo materials (block problems go with their teacher)
     await prisma.teacher.deleteMany();
 
     await runSeed(prisma, readSeedOptions(env));

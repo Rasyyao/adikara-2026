@@ -51,7 +51,7 @@ export async function loginAction(_previous: LoginState, formData: FormData): Pr
     return { message: "Terjadi kesalahan di server. Coba lagi sebentar lagi." };
   }
 
-  await setToken(result.access_token, result.expires_in);
+  await setToken(result.access_token, result.expires_in, role);
   redirect("/home");
 }
 

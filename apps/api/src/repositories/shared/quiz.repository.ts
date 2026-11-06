@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
 import type { AttemptRecord, ChoiceChange, QuizQuestion, QuizRecord, QuizRepository } from "../../types/shared/quiz.types.js";
 
-const attemptInclude = {
+export const attemptInclude = {
   student: { select: { alias: true, username: true } },
   responses: { orderBy: { questionId: "asc" } },
 } as const;
@@ -9,7 +9,7 @@ const attemptInclude = {
 type QuizRow = Prisma.SessionQuizGetPayload<object>;
 type AttemptRow = Prisma.QuizAttemptGetPayload<{ include: typeof attemptInclude }>;
 
-function toQuiz(row: QuizRow): QuizRecord {
+export function toQuiz(row: QuizRow): QuizRecord {
   return {
     id: row.id,
     sessionId: row.sessionId,
@@ -25,7 +25,7 @@ function toQuiz(row: QuizRow): QuizRecord {
   };
 }
 
-function toAttempt(row: AttemptRow): AttemptRecord {
+export function toAttempt(row: AttemptRow): AttemptRecord {
   return {
     id: row.id,
     quizId: row.quizId,

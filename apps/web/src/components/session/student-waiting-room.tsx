@@ -1,10 +1,12 @@
 "use client";
 
-import { Hourglass, LogOut, PartyPopper, Play, UserMinus, X } from "lucide-react";
+import { CheckCircle2, Hourglass, LogOut, PartyPopper, Play, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useState, type ReactNode } from "react";
+import { openProblemsAction } from "@/app/actions/session-problems";
 import { createLiveChannel, liveEventOf } from "./board/live-sync";
 import { ConnectionBadge } from "./connection-badge";
+import { StudentProblemPopup } from "./problems/student-problem";
 import { QuizRunner } from "./quiz/quiz-runner";
 import { SessionWhiteboard } from "./session-whiteboard";
 import { StatusChip } from "./status-chip";
@@ -39,11 +41,28 @@ export function StudentWaitingRoom({ sessionId }: { sessionId: string }) {
   const [openQuiz, setOpenQuiz] = useState<string | null>(null);
   /** A quiz the teacher just opened, offered in a banner. */
   const [newQuiz, setNewQuiz] = useState<{ id: string; title: string; count: number } | null>(null);
+  /** Problems the teacher sent and has not closed (plus closed ones still open in the popup). */
+  const [problems, setProblems] = useState<{ id: string; title: string; solved: boolean; closed: boolean }[]>([]);
+  /** The problem in the popup; the teacher sending one opens it straight away. */
+  const [activeProblem, setActiveProblem] = useState<string | null>(null);
 
   const onEvent = useCallback<StreamHandler>((type, data) => {
     const boardEvent = liveEventOf(type, data);
     if (boardEvent) liveBoard.emit(boardEvent);
     switch (type) {
+      case "problem_opened": {
+        const problem = data.problem as { id?: unknown; title?: unknown } | undefined;
+        if (typeof problem?.id !== "string") break;
+        const id = problem.id;
+        setProblems((list) => (list.some((p) => p.id === id) ? list : [...list, { id, title: String(problem.title ?? "Soal"), solved: false, closed: false }]));
+        setActiveProblem(id); // pushed to the student, like an activity on an interactive whiteboard
+        break;
+      }
+      case "problem_closed": {
+        const problem = data.problem as { id?: unknown } | undefined;
+        setProblems((list) => list.map((p) => (p.id === problem?.id ? { ...p, closed: true } : p)));
+        break;
+      }
       case "quiz_opened": {
         const quiz = data.quiz as { id?: unknown; title?: unknown; question_count?: unknown } | undefined;
         if (typeof quiz?.id === "string") setNewQuiz({ id: quiz.id, title: String(quiz.title ?? "Kuis"), count: Number(quiz.question_count) || 0 });
@@ -63,6 +82,16 @@ export function StudentWaitingRoom({ sessionId }: { sessionId: string }) {
           count: snapshot.participant_count,
           outcome: snapshot.session.status === "ENDED" ? "ended" : "in",
         }));
+        // problems sent before this student joined (or reconnected)
+        if (snapshot.session.status !== "ENDED") {
+          void openProblemsAction(sessionId).then((r) => {
+            if (!r.ok) return;
+            setProblems((list) => {
+              const known = new Set(list.map((p) => p.id));
+              return [...list, ...r.data.items.filter((p) => !known.has(p.id)).map((p) => ({ id: p.id, title: p.title, solved: p.solved, closed: false }))];
+            });
+          });
+        }
         break;
       }
       case "participant_joined":
@@ -84,9 +113,9 @@ export function StudentWaitingRoom({ sessionId }: { sessionId: string }) {
         setView((v) => ({ ...v, outcome: "kicked" }));
         break;
     }
-  }, [liveBoard]);
+  }, [liveBoard, sessionId]);
 
-  const streamStatus = useSessionStream(sessionId, onEvent);
+  const streamStatus = useSessionStream(sessionId, onEvent, "student");
 
   if (view.outcome === "kicked" || view.outcome === "ended") {
     const kicked = view.outcome === "kicked";
@@ -142,18 +171,18 @@ export function StudentWaitingRoom({ sessionId }: { sessionId: string }) {
           </div>
         </Card>
       )}
-      <section aria-label="Papan kelas" className={started ? "flex w-full flex-col gap-3" : "hidden"}>
+      <section aria-label="Papan kelas" className={started ? "flex w-full flex-col gap-2.5" : "hidden"}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
             <h1 className="text-h3 font-semibold text-ink">Papan kelas</h1>
-            <p className="text-caption text-muted" aria-live="polite">
+            <p className="hidden text-caption text-muted xl:inline" aria-live="polite">
               Ikuti kursor guru yang bertanda nama. Bila guru mengizinkan, Anda bisa ikut menggambar.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <ConnectionBadge status={streamStatus} />
             <StatusChip status={view.status} />
-            <span className="rounded-sm border border-border bg-surface px-2 py-1 text-small font-semibold">{view.count} siswa di dalam</span>
+            <span className="rounded-sm border border-border bg-surface px-2 py-1 text-caption font-semibold text-ink">{view.count} siswa di dalam</span>
           </div>
         </div>
         {newQuiz && openQuiz !== newQuiz.id && (
@@ -180,8 +209,44 @@ export function StudentWaitingRoom({ sessionId }: { sessionId: string }) {
             </button>
           </div>
         )}
+        {problems
+          .filter((p) => !p.closed && p.id !== activeProblem)
+          .map((p) => (
+            <div key={p.id} role="status" className="diagram-caption flex flex-wrap items-center gap-3 rounded-xl border border-[#7445CC]/30 bg-[#7445CC]/5 p-3">
+              <span className="text-2xl" aria-hidden="true">
+                🧩
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-caption font-semibold uppercase tracking-wide text-[#7445CC]">Soal dari guru</p>
+                <p className="truncate text-body font-semibold text-ink">{p.title}</p>
+              </div>
+              {p.solved && (
+                <span className="inline-flex items-center gap-1 text-caption font-semibold text-success">
+                  <CheckCircle2 size={14} strokeWidth={2.25} aria-hidden="true" />
+                  Selesai
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveProblem(p.id)}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-primary px-4 text-small font-semibold text-white hover:bg-primary-hover"
+              >
+                <Play size={16} strokeWidth={2.25} aria-hidden="true" />
+                {p.solved ? "Buka lagi" : "Kerjakan soal"}
+              </button>
+            </div>
+          ))}
         <SessionWhiteboard sessionId={sessionId} initial={null} live={{ channel: liveBoard, role: "student" }} onOpenQuiz={(card) => setOpenQuiz(card.quizId)} />
       </section>
+      {activeProblem && started && (
+        <StudentProblemPopup
+          key={activeProblem}
+          sessionId={sessionId}
+          problemId={activeProblem}
+          closed={problems.find((p) => p.id === activeProblem)?.closed ?? false}
+          onMinimize={() => setActiveProblem(null)}
+        />
+      )}
       {openQuiz && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-ink/40 p-0 sm:items-center sm:p-6" onClick={(event) => event.target === event.currentTarget && setOpenQuiz(null)}>
           <div role="dialog" aria-modal="true" aria-label="Kuis" className="max-h-[100dvh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-surface p-4 shadow-[var(--shadow-overlay)] sm:max-h-[90dvh] sm:rounded-2xl sm:p-6">

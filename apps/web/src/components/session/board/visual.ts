@@ -185,10 +185,14 @@ function objectEnd(text: string, from: number): number {
 function visualRegion(content: string): { json: string; start: number; end: number } | null {
   const fence = /```([\w-]*)[^\n]*\n?([\s\S]*?)(?:```|$)/g;
   for (const m of content.matchAll(fence)) {
-    if (m[1].toLowerCase() !== "visual" && !TYPE_HINT.test(m[2])) continue;
+    const lang = m[1].toLowerCase();
+    if (lang === "mindmap" || lang === "assessment") continue;
+    if (/"parent_id"\s*:/.test(m[2])) continue;
+    if (lang !== "visual" && !TYPE_HINT.test(m[2])) continue;
     const start = m.index ?? 0;
     return { json: m[2].trim(), start, end: start + m[0].length };
   }
+  if (/```(?:mindmap|assessment)\b/i.test(content) || /"parent_id"\s*:/.test(content)) return null;
   const hint = TYPE_HINT.exec(content);
   if (!hint) return null;
   const start = content.lastIndexOf("{", hint.index);

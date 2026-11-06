@@ -14,7 +14,7 @@ export function createDocsRouter(spec: Record<string, unknown>): Router {
     "/",
     swaggerUi.serve,
     swaggerUi.setup(spec, {
-      customSiteTitle: "Adikara API docs",
+      customSiteTitle: "NusaCodeAI API docs",
       swaggerOptions: { persistAuthorization: true, displayRequestDuration: true },
     }),
   );

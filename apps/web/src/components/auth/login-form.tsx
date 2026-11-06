@@ -63,7 +63,7 @@ export function LoginForm() {
     else if (state.fieldErrors?.password) passwordRef.current?.focus();
   }, [state, copy.field, toast]);
 
-  // Adikara does not use a Service Worker. If another app previously ran on localhost:3000 and left one behind,
+  // NusaCodeAI does not use a Service Worker. If another app previously ran on localhost:3000 and left one behind,
   // unregister it so it cannot intercept requests or break hydration.
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -96,7 +96,7 @@ export function LoginForm() {
   return (
     <form action={formAction} onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
       <div>
-        <h1 className="text-h1 font-semibold">Masuk ke Adikara</h1>
+        <h1 className="text-h1 font-semibold">Masuk ke NusaCodeAI</h1>
         <p className="mt-1 text-body text-muted">Pilih peran Anda, lalu masukkan akun dari sekolah.</p>
       </div>
 

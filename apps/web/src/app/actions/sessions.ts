@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { ApiError } from "@/lib/api/errors";
 import { studentSessionsApi, teacherSessionsApi } from "@/lib/api/endpoints";
 import type { Attendance, BoardScene, SessionMaterial } from "@/lib/api/types";
-import { requireViewer } from "@/lib/auth/dal";
+import { requireActionToken, requireViewer } from "@/lib/auth/dal";
 import { isUuid, validateClassCode, validatePin, cleanText, normalizePin, type FieldErrors } from "@/lib/validation/auth";
 
 // Every action re-checks who is calling. Server Actions are public HTTP endpoints, so the page that
@@ -36,6 +36,9 @@ function describe(error: unknown): string {
         return "Kelas tidak ditemukan.";
       case "material_not_found":
         return "Materi tidak ditemukan. Mungkin sudah dihapus.";
+      case "unauthorized":
+      case "forbidden":
+        return "Sesi masuk telah berakhir. Muat ulang halaman.";
     }
     if (error.status === 429) return "Terlalu banyak percobaan. Tunggu sebentar, lalu coba lagi.";
   }
@@ -71,9 +74,9 @@ export async function createSessionAction(_previous: FormState, formData: FormDa
 }
 
 async function teacherCall<T>(sessionId: string, call: (token: string) => Promise<T>): Promise<ActionResult<{ data: T }>> {
-  const { token } = await requireViewer("staff");
   if (!isUuid(sessionId)) return { ok: false, message: "Sesi tidak valid." };
   try {
+    const token = await requireActionToken("staff");
     return { ok: true, data: await call(token) };
   } catch (error) {
     return { ok: false, message: describe(error) };

@@ -20,7 +20,7 @@ const TOOLS: { tool: Tool; key: string; Icon: typeof Square }[] = [
 /** Tool ids where a divider is drawn before the tool, so the row reads as groups. */
 const GROUP_START = new Set<Tool>(["rectangle", "arrow", "text"]);
 
-const PANEL = "rounded-lg border border-border bg-surface shadow-[var(--shadow-overlay)]";
+const PANEL = "rounded-xl border border-border bg-surface/95 backdrop-blur-sm shadow-[var(--shadow-overlay)]";
 
 export function IconButton({
   label,
@@ -43,7 +43,7 @@ export function IconButton({
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
-      className={`relative flex size-10 shrink-0 select-none items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`relative flex size-8 shrink-0 select-none items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40 sm:size-10 ${
         active ? "bg-primary text-white shadow-sm" : "text-ink hover:bg-bg"
       }`}
     >
@@ -58,7 +58,7 @@ export function ToolBar({ tool, onTool }: { tool: Tool; onTool: (tool: Tool) => 
     <div role="toolbar" aria-label="Alat papan tulis" className={`${PANEL} flex max-w-full items-center gap-0.5 overflow-x-auto p-1`}>
       {TOOLS.map(({ tool: id, key, Icon }) => (
         <Fragment key={id}>
-          {GROUP_START.has(id) && <span aria-hidden="true" className="mx-1 h-6 w-px shrink-0 bg-border" />}
+          {GROUP_START.has(id) && <span aria-hidden="true" className="mx-0.5 h-6 w-px shrink-0 bg-border sm:mx-1" />}
           <IconButton label={`${TOOL_LABELS[id]} (${key})`} active={tool === id} onClick={() => onTool(id)}>
             <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
             <span aria-hidden="true" className={`pointer-events-none absolute bottom-0.5 right-1 text-[9px] font-semibold leading-none ${tool === id ? "text-white/70" : "text-muted/70"}`}>

@@ -27,6 +27,7 @@ import {
   Plus,
   Send,
   Sparkles,
+  Puzzle,
   Square,
   Trash2,
   Wand2,
@@ -34,6 +35,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useEffect,
   useId,
@@ -47,7 +49,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { editMessageAction, sendChatMessageAction, stopChatReplyAction } from "@/app/actions/chats";
+import { deleteChatAction, editMessageAction, sendChatMessageAction, stopChatReplyAction } from "@/app/actions/chats";
 import {
   AssessmentBoard,
   assessmentKindLabel,
@@ -69,6 +71,7 @@ import { VisualCard } from "@/components/session/board/visual-card";
 import { useSaveVisual } from "@/components/session/board/visual-library";
 import { displayPrompt, tracePrompt, visualPrompt } from "@/components/session/board/visual-prompts";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Spinner } from "@/components/ui/loaders";
 import { useToast } from "@/components/ui/toast";
 import type { MaterialView, MessageView } from "@/lib/api/types";
@@ -995,7 +998,10 @@ export function MaterialChatbot({
   initialMaterial?: MaterialRow;
   initialReplyPending?: boolean;
 }) {
+  const router = useRouter();
   const toast = useToast();
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deletingMaterial, setDeletingMaterial] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1176,6 +1182,10 @@ export function MaterialChatbot({
   useEffect(() => {
     const container = scrollAreaRef.current;
     if (!container) return;
+    if (messages.length === 0 && !thinking) {
+      container.scrollTo({ top: 0 });
+      return;
+    }
     container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages.length, thinking]);
 
@@ -1426,6 +1436,21 @@ export function MaterialChatbot({
     toast.info("Berkas sumber dihapus dari tampilan.");
   }
 
+  async function handleDeleteMaterial() {
+    if (!chatId || !isUuid(chatId)) return;
+    setDeletingMaterial(true);
+    const result = await deleteChatAction(chatId);
+    setDeletingMaterial(false);
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+    setConfirmDeleteOpen(false);
+    toast.success(`Materi "${title}" dihapus.`);
+    router.push("/teacher/materials");
+    router.refresh();
+  }
+
   function resetNewChat() {
     if (uploadTimerRef.current) clearInterval(uploadTimerRef.current);
     setChatId(null);
@@ -1556,6 +1581,16 @@ export function MaterialChatbot({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {chatId && (
+              <Link
+                href={`/teacher/problems?materi=${chatId}`}
+                title="Soal blok pemecahan masalah dari materi ini"
+                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:bg-bg"
+              >
+                <Puzzle size={20} strokeWidth={1.75} aria-hidden="true" />
+                <span className="hidden sm:inline">Soal blok</span>
+              </Link>
+            )}
             <button
               type="button"
               onClick={resetNewChat}
@@ -1565,6 +1600,18 @@ export function MaterialChatbot({
               <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
               <span className="hidden sm:inline">Baru</span>
             </button>
+            {chatId && isUuid(chatId) && (
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(true)}
+                title="Hapus materi ini"
+                aria-label={`Hapus materi ${title}`}
+                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-muted transition-colors duration-150 ease-out hover:border-danger/40 hover:bg-danger/10 hover:text-danger"
+              >
+                <Trash2 size={18} strokeWidth={1.75} aria-hidden="true" />
+                <span className="hidden sm:inline">Hapus</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -1594,33 +1641,33 @@ export function MaterialChatbot({
             {/* Scrollable middle area with wider max-w-5xl reading & chat column */}
             <div ref={scrollAreaRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-8">
               {messages.length === 0 ? (
-                <div className="mx-auto my-auto flex w-full max-w-4xl flex-col gap-7 py-2">
-                  <div className="flex flex-col gap-2">
+                <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 py-1">
+                  <div className="flex flex-col gap-1.5">
                     <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-primary-tint px-3 py-1 text-caption font-semibold text-primary">
                       <Sparkles size={16} strokeWidth={1.75} aria-hidden="true" />
                       Asisten AI Guru
                     </span>
-                    <h1 className="text-display font-semibold text-ink">Materi apa yang ingin Anda siapkan hari ini?</h1>
-                    <p className="max-w-2xl text-body leading-7 text-muted">
+                    <h1 className="text-h1 font-semibold text-ink sm:text-display">Materi apa yang ingin Anda siapkan hari ini?</h1>
+                    <p className="max-w-2xl text-body leading-6 text-muted">
                       Tidak perlu paham hal teknis. Ikuti tiga langkah di bawah, atau langsung pilih salah satu contoh perintah.
                     </p>
                   </div>
 
                   <ol className="grid gap-3 sm:grid-cols-3">
                     {GETTING_STARTED.map((item, index) => (
-                      <li key={item.title} className="flex gap-3 rounded-lg border border-border bg-surface p-4">
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-small font-bold text-white">{index + 1}</span>
+                      <li key={item.title} className="flex gap-3 rounded-lg border border-border bg-surface p-3.5">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-small font-bold text-white">{index + 1}</span>
                         <div className="min-w-0">
-                          <p className="flex items-center gap-1.5 text-body font-semibold text-ink">
+                          <p className="flex items-center gap-1.5 text-small font-semibold text-ink">
                             <item.Icon size={16} strokeWidth={1.75} className="text-primary" aria-hidden="true" />
                             {item.title}
                           </p>
-                          <p className="mt-0.5 text-small leading-6 text-muted">{item.text}</p>
+                          <p className="mt-0.5 text-caption leading-5 text-muted">{item.text}</p>
                           {index === 0 && (
                             <button
                               type="button"
                               onClick={() => fileInputRef.current?.click()}
-                              className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-primary px-3 text-caption font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+                              className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-md border border-primary px-2.5 text-caption font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
                             >
                               <Paperclip size={14} strokeWidth={1.75} aria-hidden="true" />
                               Pilih berkas
@@ -1631,22 +1678,22 @@ export function MaterialChatbot({
                     ))}
                   </ol>
 
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2.5">
                     <p className="text-small font-semibold text-ink">Atau mulai dengan salah satu ini:</p>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2.5 sm:grid-cols-2">
                       {STARTERS.map((item) => (
                         <button
                           key={item.title}
                           type="button"
                           onClick={() => void submitMessage(item.prompt)}
-                          className="group flex items-start gap-3 rounded-lg border border-border bg-bg p-4 text-left transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint"
+                          className="group flex items-start gap-3 rounded-lg border border-border bg-bg p-3.5 text-left transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint"
                         >
                           <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-surface text-primary transition-colors group-hover:bg-primary group-hover:text-white">
                             <item.Icon size={18} strokeWidth={1.75} aria-hidden="true" />
                           </span>
                           <span className="min-w-0">
-                            <span className="block text-body font-semibold text-ink">{item.title}</span>
-                            <span className="mt-0.5 block text-small leading-6 text-muted">{item.description}</span>
+                            <span className="block text-small font-semibold text-ink">{item.title}</span>
+                            <span className="mt-0.5 block text-caption leading-5 text-muted">{item.description}</span>
                           </span>
                         </button>
                       ))}
@@ -1835,21 +1882,21 @@ export function MaterialChatbot({
                     className="focus-bare block max-h-36 min-h-[48px] w-full resize-none bg-transparent px-1 py-1 text-body text-ink outline-none placeholder:text-muted"
                   />
 
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pt-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="mt-2 flex items-center justify-between gap-2 pt-1">
+                    <div className="flex min-w-0 items-center gap-2">
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint hover:text-primary"
+                        className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md border border-border bg-surface px-3 text-small font-semibold text-ink transition-colors duration-150 ease-out hover:border-primary hover:bg-primary-tint hover:text-primary"
                       >
-                        <Paperclip size={20} strokeWidth={1.75} aria-hidden="true" />
+                        <Paperclip size={18} strokeWidth={1.75} aria-hidden="true" />
                         <span>Unggah materi</span>
                       </button>
-                      <span className="hidden text-caption text-muted sm:inline">Enter untuk kirim · Shift + Enter untuk baris baru</span>
+                      <span className="hidden truncate text-caption text-muted xl:inline">Enter untuk kirim · Shift + Enter untuk baris baru</span>
                     </div>
 
                     {thinking && !isSending ? (
-                      <Button type="button" variant="secondary" onClick={() => void stopReply()} aria-label="Hentikan balasan AI">
+                      <Button type="button" variant="secondary" onClick={() => void stopReply()} aria-label="Hentikan balasan AI" className="ml-auto shrink-0">
                         <Square size={16} strokeWidth={1.75} fill="currentColor" aria-hidden="true" />
                         Berhenti
                       </Button>
@@ -1858,8 +1905,9 @@ export function MaterialChatbot({
                         type="submit"
                         loading={isSending || isUploadingFile}
                         disabled={isSending || isUploadingFile || (!prompt.trim() && !stagedFile)}
+                        className="ml-auto shrink-0"
                       >
-                        {!(isSending || isUploadingFile) && <Send size={20} strokeWidth={1.75} aria-hidden="true" />}
+                        {!(isSending || isUploadingFile) && <Send size={18} strokeWidth={1.75} aria-hidden="true" />}
                         {isUploadingFile ? "Mengunggah…" : isSending ? "Mengirim…" : "Kirim"}
                       </Button>
                     )}
@@ -1927,6 +1975,14 @@ export function MaterialChatbot({
                   {SIDEBAR_TABS.map((tab) => {
                     const isActive = activeTab === tab.id;
                     const TabIcon = tab.Icon;
+                    const badgeCount =
+                      tab.id === "sources"
+                        ? sources.length
+                        : tab.id === "assessment"
+                          ? assessmentSlots.filter((s) => s.entry !== null).length
+                          : activeMindmap
+                            ? 1
+                            : 0;
                     return (
                       <button
                         key={tab.id}
@@ -1941,13 +1997,13 @@ export function MaterialChatbot({
                       >
                         <TabIcon size={15} strokeWidth={1.75} aria-hidden="true" />
                         <span>{tab.label}</span>
-                        {tab.id === "sources" && (
+                        {(tab.id === "sources" || badgeCount > 0) && (
                           <span
                             className={`rounded-full px-1.5 py-0.2 text-[11px] font-semibold ${
                               isActive ? "bg-white/20 text-white" : "bg-bg text-muted"
                             }`}
                           >
-                            {sources.length}
+                            {badgeCount}
                           </span>
                         )}
                       </button>
@@ -2047,98 +2103,44 @@ export function MaterialChatbot({
                       ))}
                     </ul>
                   )}
-
-                  <hr className="mt-auto border-border" />
-
-                  <div>
-                    <h2 className="text-h3 font-semibold text-ink">Soal asesmen</h2>
-                    <p className="text-caption text-muted">Setujui soal agar tersimpan di sini; Pre-Test dan Post-Test dibuat terpisah.</p>
-                  </div>
-                  <ul className="flex flex-col gap-2.5">
-                    {assessmentSlots.map(({ kind, entry }) => (
-                      <li key={kind} className="chat-item-in flex flex-col gap-2 rounded-md border border-border bg-bg p-3">
-                        <div className="flex items-start gap-2.5">
-                          <span
-                            aria-hidden="true"
-                            className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary-tint text-primary"
-                          >
-                            <ClipboardList size={18} strokeWidth={1.75} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-small font-semibold text-ink" title={entry?.assessment.title}>
-                              {entry?.assessment.title ?? assessmentKindLabel(kind)}
-                            </p>
-                            <p className="text-caption text-muted">
-                              {assessmentKindLabel(kind)} · {entry ? `${entry.assessment.questions.length} soal` : "Belum dibuat"}
-                            </p>
-                          </div>
-                          {entry && <StatusBadge status={entry.assessment.status} />}
-                        </div>
-                        <div className="flex items-center justify-end gap-3 border-t border-border pt-2">
-                          {entry ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOpenAssessmentMsgId(entry.messageId);
-                                setOpenAssessmentKind(kind);
-                                setActiveTab("assessment");
-                              }}
-                              className="inline-flex items-center gap-1 text-caption font-semibold text-ink hover:text-primary"
-                            >
-                              <Eye size={14} strokeWidth={1.75} aria-hidden="true" />
-                              {entry.assessment.status === "approved" ? "Lihat" : "Periksa & Setujui"}
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() => handleGenerateAssessment(kind)}
-                            disabled={thinking || isUploadingFile}
-                            className="text-caption font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {entry ? "Buat ulang" : `Buat ${assessmentKindLabel(kind)}`}
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <Button
-                    variant="primary"
-                    full
-                    onClick={handleGenerateMindmap}
-                    disabled={thinking || isUploadingFile}
-                  >
-                    <Network size={18} strokeWidth={1.75} aria-hidden="true" />
-                    Buat Mindmap
-                  </Button>
                 </div>
               ) : activeTab === "assessment" ? (
                 activeAssessmentEntry ? (
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <div role="tablist" aria-label="Soal asesmen" className="flex shrink-0 gap-2 border-b border-border bg-bg px-4 py-2.5">
-                      {assessmentSlots.map(({ kind, entry }) => {
-                        const selected = (openAssessmentKind ?? activeAssessmentEntry.assessments[0].kind) === kind;
-                        return (
-                          <button
-                            key={kind}
-                            type="button"
-                            role="tab"
-                            aria-selected={selected}
-                            disabled={!entry && (thinking || isUploadingFile)}
-                            onClick={() => {
-                              if (!entry) return handleGenerateAssessment(kind);
-                              setOpenAssessmentMsgId(entry.messageId);
-                              setOpenAssessmentKind(kind);
-                            }}
-                            className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3.5 py-1.5 text-body font-semibold transition-colors disabled:opacity-60 ${
-                              selected ? "border-primary bg-surface text-primary" : "border-border bg-bg text-muted hover:border-primary/50 hover:text-ink"
-                            }`}
-                          >
-                            {assessmentKindLabel(kind)}
-                            {entry ? <StatusBadge status={entry.assessment.status} /> : <span className="text-caption font-normal">+ Buat</span>}
-                          </button>
-                        );
-                      })}
+                    <div role="tablist" aria-label="Soal asesmen" className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-bg px-4 py-2.5">
+                      <div className="flex flex-wrap gap-2">
+                        {assessmentSlots.map(({ kind, entry }) => {
+                          const selected = (openAssessmentKind ?? activeAssessmentEntry.assessments[0].kind) === kind;
+                          return (
+                            <button
+                              key={kind}
+                              type="button"
+                              role="tab"
+                              aria-selected={selected}
+                              disabled={!entry && (thinking || isUploadingFile)}
+                              onClick={() => {
+                                if (!entry) return handleGenerateAssessment(kind);
+                                setOpenAssessmentMsgId(entry.messageId);
+                                setOpenAssessmentKind(kind);
+                              }}
+                              className={`inline-flex min-h-10 items-center gap-2 rounded-lg border px-3.5 py-1.5 text-small font-semibold transition-colors disabled:opacity-60 ${
+                                selected ? "border-primary bg-surface text-primary" : "border-border bg-bg text-muted hover:border-primary/50 hover:text-ink"
+                              }`}
+                            >
+                              {assessmentKindLabel(kind)}
+                              {entry ? <StatusBadge status={entry.assessment.status} /> : <span className="text-caption font-normal">+ Buat</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateAssessment(openAssessmentKind ?? activeAssessmentEntry.assessments[0].kind)}
+                        disabled={thinking || isUploadingFile}
+                        className="text-caption font-semibold text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Buat ulang
+                      </button>
                     </div>
                     <AssessmentBoard
                       key={`${activeAssessmentEntry.id}-${openAssessmentKind ?? ""}`}
@@ -2261,6 +2263,17 @@ export function MaterialChatbot({
         {viewingSource && chatId && (
           <SourceViewer chatId={chatId} source={viewingSource} onClose={() => setViewingSourceId(null)} />
         )}
+
+        <ConfirmDialog
+          open={confirmDeleteOpen}
+          title="Hapus materi ini?"
+          confirmLabel="Hapus materi"
+          loading={deletingMaterial}
+          onCancel={() => !deletingMaterial && setConfirmDeleteOpen(false)}
+          onConfirm={() => void handleDeleteMaterial()}
+        >
+          &ldquo;{title}&rdquo; beserta seluruh percakapan AI, mindmap, soal, dan berkas sumbernya akan dihapus permanen.
+        </ConfirmDialog>
       </div>
     </VisualAskProvider>
   );

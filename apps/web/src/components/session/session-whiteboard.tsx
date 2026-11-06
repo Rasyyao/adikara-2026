@@ -9,6 +9,7 @@ import type { BoardScene } from "@/lib/api/types";
 import type { MindmapPayload } from "../materials/mindmap-layout";
 import { defaultNodePrompt } from "../materials/mindmap-parse";
 import type { AssessmentPayload } from "../materials/assessment-editor";
+import { QuizActivityPill } from "./quiz/quiz-activity-pill";
 import { QuizResultsPanel } from "./quiz/quiz-results";
 import { ElementView } from "./board/element-view";
 import { ContextMenu, type MenuItem } from "./board/context-menu";
@@ -113,8 +114,8 @@ type Gesture =
   | { kind: "pinch"; distance: number; origin: View; centre: Point }
   | { kind: "create"; id: string; from: Point; before: BoardElement[]; tool: Tool }
   | { kind: "draw"; id: string; from: Point; before: BoardElement[] }
-  | { kind: "move"; from: Point; originals: BoardElement[]; before: BoardElement[] }
-  | { kind: "resize"; handle: Handle; from: Bounds; originals: BoardElement[]; before: BoardElement[] }
+  | { kind: "move"; from: Point; originals: BoardElement[]; before: BoardElement[]; step: number }
+  | { kind: "resize"; handle: Handle; from: Bounds; originals: BoardElement[]; before: BoardElement[]; step: number }
   | { kind: "marquee"; from: Point; keep: string[] }
   | { kind: "erase"; before: BoardElement[] };
 
@@ -203,6 +204,8 @@ export function SessionWhiteboard({
   const [fullscreen, setFullscreen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
   /** Width the teacher gave the material panel by dragging its edge or pressing expand; never wider than the board allows. */
   const [panelWidth, setPanelWidth] = useState(PANEL_PX);
   const panelMax = Math.max(PANEL_PX, size.w - 96);
@@ -232,8 +235,15 @@ export function SessionWhiteboard({
   const undoStack = useRef<BoardElement[][]>([]);
   const redoStack = useRef<BoardElement[][]>([]);
   const [history, setHistory] = useState({ undo: 0, redo: 0 });
+  const historyRef = useRef({ undo: 0, redo: 0 });
 
-  const [saveState, setSaveState] = useState<SaveState>(initialElements.length > 0 ? "saved" : "idle");
+  const [saveState, setSaveStateState] = useState<SaveState>(initialElements.length > 0 ? "saved" : "idle");
+  const saveStateRef = useRef<SaveState>(initialElements.length > 0 ? "saved" : "idle");
+  const setSaveState = useCallback((next: SaveState) => {
+    if (saveStateRef.current === next) return;
+    saveStateRef.current = next;
+    setSaveStateState(next);
+  }, []);
   const lastSaved = useRef(signatureOf(initialElements));
   const pending = useRef<{ elements: BoardElement[]; signature: string } | null>(null);
   const inFlight = useRef(false);
@@ -244,6 +254,7 @@ export function SessionWhiteboard({
   // ---- state helpers: every one updates the ref (read by event handlers) and the state (read by rendering) -------------
 
   const setElements = useCallback((next: BoardElement[]) => {
+    if (elementsRef.current === next) return;
     elementsRef.current = next;
     setElementsState(next);
   }, []);
@@ -268,7 +279,13 @@ export function SessionWhiteboard({
     setEditingState(next);
   }, []);
 
-  const syncHistory = useCallback(() => setHistory({ undo: undoStack.current.length, redo: redoStack.current.length }), []);
+  const syncHistory = useCallback(() => {
+    const undo = undoStack.current.length;
+    const redo = redoStack.current.length;
+    if (historyRef.current.undo === undo && historyRef.current.redo === redo) return;
+    historyRef.current = { undo, redo };
+    setHistory({ undo, redo });
+  }, []);
 
   /** Records `before` as an undo step when the elements changed since. */
   const commit = useCallback(
@@ -285,10 +302,19 @@ export function SessionWhiteboard({
   // ---- drawing together ------------------------------------------------------------------------------------------------
 
   const student = live?.role === "student";
+  const framed = useRef(false);
+  const fitRef = useRef<() => void>(() => {});
+  const glideRef = useRef<(target: View) => void>(() => {});
+
   /** The others' changes go into the board and into every undo step, so undo only takes back this viewer's own strokes. */
   const applyRemote = useCallback(
-    (change: (all: BoardElement[]) => BoardElement[], replace = false) => {
-      setElements(change(elementsRef.current));
+    (change: (all: BoardElement[]) => BoardElement[], replace = false, upserts?: BoardElement[]) => {
+      const wasEmpty = elementsRef.current.length === 0;
+      const next = change(elementsRef.current);
+      if (gesture.current && "before" in gesture.current) {
+        gesture.current.before = change(gesture.current.before);
+      }
+      setElements(next);
       if (replace) {
         undoStack.current = [];
         redoStack.current = [];
@@ -297,12 +323,37 @@ export function SessionWhiteboard({
         redoStack.current = redoStack.current.map(change);
       }
       syncHistory();
-      const present = new Set(elementsRef.current.map((e) => e.id));
+      const present = new Set(next.map((e) => e.id));
       if (selectedRef.current.some((id) => !present.has(id))) setSelected(selectedRef.current.filter((id) => present.has(id)));
+
+      if (next.length > 0 && (student || replace)) {
+        const { w, h } = sizeRef.current;
+        if (w === 0 || h === 0) {
+          framed.current = false;
+        } else if (replace && wasEmpty) {
+          framed.current = true;
+          fitRef.current();
+        } else if (student && upserts && upserts.length > 0 && !gesture.current) {
+          const changedBox = boundsOfAll(upserts);
+          const allBox = boundsOfAll(next);
+          const v = viewRef.current;
+          if (changedBox && allBox) {
+            const leftPx = v.x + changedBox.x * v.zoom;
+            const topPx = v.y + changedBox.y * v.zoom;
+            const rightPx = v.x + (changedBox.x + changedBox.w) * v.zoom;
+            const bottomPx = v.y + (changedBox.y + changedBox.h) * v.zoom;
+            const outOfView = leftPx < 16 || topPx < 48 || rightPx > w - 16 || bottomPx > h - 40;
+            if (outOfView) {
+              const zoom = clampZoom(Math.min((w - 120) / Math.max(allBox.w, 1), (h - 160) / Math.max(allBox.h, 1), 1.5));
+              glideRef.current({ zoom, x: w / 2 - (allBox.x + allBox.w / 2) * zoom, y: h / 2 - (allBox.y + allBox.h / 2) * zoom });
+            }
+          }
+        }
+      }
     },
-    [setElements, setSelected, syncHistory],
+    [setElements, setSelected, student, syncHistory],
   );
-  const sync = useLiveSync({ sessionId, channel: live?.channel ?? null, elements, elementsRef, applyRemote, cursorEveryMs: student ? 120 : 60 });
+  const sync = useLiveSync({ sessionId, channel: live?.channel ?? null, role: live?.role, elements, elementsRef, applyRemote, cursorEveryMs: student ? 120 : 60 });
   /** A student draws only while the teacher allows it. */
   const readOnly = readOnlyProp || (student && !sync.drawAllowed);
   /** The teacher's browser saves the board; a student's changes are saved by the server. */
@@ -378,7 +429,7 @@ export function SessionWhiteboard({
     (diagramId: string) => {
       const box = boundsOfAll(elementsRef.current.filter((e) => e.diagram?.id === diagramId));
       if (!box || size.w === 0) return;
-      const reserved = fullscreen && panelOpen ? panelPx + 16 : 0;
+      const reserved = panelOpen && !readOnly && !student ? panelPx + 16 : 0;
       const roomW = size.w - reserved - DOCK_W - 48;
       const roomH = size.h - 72 - 24; // under the toolbar
       const w = box.w + FRAME_PAD * 2;
@@ -388,18 +439,27 @@ export function SessionWhiteboard({
       const top = 72 + (roomH - h * zoom) / 2;
       glideTo({ zoom, x: left - (box.x - FRAME_PAD) * zoom, y: top - (box.y - FRAME_PAD) * zoom });
     },
-    [fullscreen, glideTo, panelOpen, panelPx, size.h, size.w],
+    [glideTo, panelOpen, panelPx, readOnly, size.h, size.w, student],
   );
+
+  useEffect(() => {
+    fitRef.current = fit;
+    glideRef.current = glideTo;
+  }, [fit, glideTo]);
 
   // size of the board, and the first view: the drawing in the middle
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
-    const observer = new ResizeObserver(([entry]) => setSize({ w: entry.contentRect.width, h: entry.contentRect.height }));
+    const observer = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      const h = entry.contentRect.height;
+      if (sizeRef.current.w === w && sizeRef.current.h === h) return;
+      setSize({ w, h });
+    });
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-  const framed = useRef(false);
   useEffect(() => {
     if (framed.current || size.w === 0) return;
     framed.current = true;
@@ -811,7 +871,7 @@ export function SessionWhiteboard({
       const chosen = selectedRef.current.map((id) => before.find((e) => e.id === id)).filter((e): e is BoardElement => Boolean(e));
       const box = boundsOfAll(chosen);
       if (handle && box) {
-        gesture.current = { kind: "resize", handle, from: box, originals: chosen, before };
+        gesture.current = { kind: "resize", handle, from: box, originals: chosen, before, step: 0 };
         return;
       }
       const hit = topElementAt(p);
@@ -827,7 +887,11 @@ export function SessionWhiteboard({
           ids = members;
           setSelected(ids);
         }
-        gesture.current = { kind: "move", from: p, originals: before.filter((e) => ids.includes(e.id)), before };
+        gesture.current = { kind: "move", from: p, originals: before.filter((e) => ids.includes(e.id)), before, step: 0 };
+        return;
+      }
+      if (!event.shiftKey && box && p[0] >= box.x && p[0] <= box.x + box.w && p[1] >= box.y && p[1] <= box.y + box.h) {
+        gesture.current = { kind: "move", from: p, originals: chosen, before, step: 0 };
         return;
       }
       const keep = event.shiftKey ? selectedRef.current : [];
@@ -935,11 +999,13 @@ export function SessionWhiteboard({
         break;
       }
       case "move": {
-        const moved = new Map(g.originals.map((e) => [e.id, moveElement(e, p[0] - g.from[0], p[1] - g.from[1])]));
+        g.step += 1;
+        const moved = new Map(g.originals.map((e) => [e.id, { ...moveElement(e, p[0] - g.from[0], p[1] - g.from[1]), version: e.version + g.step }]));
         setElements(g.before.map((e) => moved.get(e.id) ?? e));
         break;
       }
       case "resize": {
+        g.step += 1;
         let left = g.from.x;
         let top = g.from.y;
         let right = g.from.x + g.from.w;
@@ -948,7 +1014,12 @@ export function SessionWhiteboard({
         if (g.handle.includes("e")) right = p[0];
         if (g.handle.includes("n")) top = p[1];
         if (g.handle.includes("s")) bottom = p[1];
-        const resized = new Map(transformElements(g.originals, g.from, { x: left, y: top, w: right - left, h: bottom - top }).map((e) => [e.id, e]));
+        const resized = new Map(
+          transformElements(g.originals, g.from, { x: left, y: top, w: right - left, h: bottom - top }).map((e) => [
+            e.id,
+            { ...e, version: e.version + g.step - 1 },
+          ]),
+        );
         setElements(g.before.map((e) => resized.get(e.id) ?? e));
         break;
       }
@@ -986,7 +1057,7 @@ export function SessionWhiteboard({
     if (click && (g.kind === "move" || g.kind === "pan") && Math.hypot(event.clientX - click.x, event.clientY - click.y) < 4) {
       const [elementId, nodeId] = click.ref.split("|");
       const last = lastNodeClick.current;
-      if (last && last.ref === click.ref && event.timeStamp - last.at < 400 && fullscreen && !readOnly) {
+      if (last && last.ref === click.ref && event.timeStamp - last.at < 400 && !readOnly && !student) {
         // a double click asks the AI about the node, as on the materials page
         lastNodeClick.current = null;
         askNode(elementId, nodeId);
@@ -1149,15 +1220,26 @@ export function SessionWhiteboard({
 
   const flush = useCallback(async () => {
     if (inFlight.current || !pending.current) return;
+    if (gesture.current) {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => void flushRef.current(), 300);
+      return;
+    }
     const change = pending.current;
     pending.current = null;
     inFlight.current = true;
     setSaveState("saving");
-    const result = await saveBoardAction(sessionId, {
-      elements: change.elements as unknown as Record<string, unknown>[],
-      appState: { viewBackgroundColor: BACKGROUND },
-    });
-    inFlight.current = false;
+    let result: Awaited<ReturnType<typeof saveBoardAction>>;
+    try {
+      result = await saveBoardAction(sessionId, {
+        elements: change.elements as unknown as Record<string, unknown>[],
+        appState: { viewBackgroundColor: BACKGROUND },
+      });
+    } catch {
+      result = { ok: false, message: "Tidak bisa terhubung ke server. Periksa koneksi Anda, lalu coba lagi." };
+    } finally {
+      inFlight.current = false;
+    }
     if (result.ok) {
       failures.current = 0;
       lastSaved.current = change.signature;
@@ -1170,7 +1252,7 @@ export function SessionWhiteboard({
     setSaveState("error");
     if (failures.current === 1) toast.error(result.message);
     if (failures.current < 5) timer.current = setTimeout(() => void flushRef.current(), SAVE_DELAY_MS * 2 ** failures.current);
-  }, [sessionId, toast]);
+  }, [sessionId, setSaveState, toast]);
 
   useEffect(() => {
     flushRef.current = flush;
@@ -1181,10 +1263,12 @@ export function SessionWhiteboard({
     const signature = signatureOf(elements);
     if (signature === lastSaved.current && !pending.current) return; // a pan or a selection does not change the drawing
     pending.current = { elements, signature };
-    setSaveState((current) => (current === "saving" ? current : "dirty"));
+    if (saveStateRef.current !== "saving" && saveStateRef.current !== "dirty") {
+      setSaveState("dirty");
+    }
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void flushRef.current(), SAVE_DELAY_MS);
-  }, [elements, saves]);
+  }, [elements, saves, setSaveState]);
 
   // leaving the page (or the tab being hidden) should not lose the last strokes
   useEffect(() => {
@@ -1223,7 +1307,9 @@ export function SessionWhiteboard({
   const partInfo = livePart ? diagramPartInfo(elements, livePart.target, livePart.element, livePart.target === playTarget ? playSteps : undefined) : null;
   const partLines = livePart ? (livePart.target === playTarget ? playLines : diagramPseudocode(elements, livePart.target)) : [];
   const hoverElement = hoverNode && playTarget ? elements.find((e) => e.diagram?.id === playTarget && e.diagram.node === hoverNode && !e.diagram.deco) : undefined;
-  const materialRight = fullscreen && panelOpen && !readOnly ? panelPx + 16 : 0;
+  const materialRight = panelOpen && !readOnly && !student ? panelPx + 16 : 0;
+  // the newest quiz on the board still taking answers: the teacher follows it with a live counter
+  const openQuiz = live && !student && !readOnlyProp ? [...elements].reverse().find((e): e is QuizElement => e.type === "quiz" && !e.closed && e.sessionId === sessionId) : undefined;
   // the panel sticks to the right of the diagram (left when there is no room), so the pseudocode reads beside the flow
   // and moves with it; the diagram gets a frame that the panel continues. Without room on either side it docks in a corner.
   const dock = (() => {
@@ -1263,20 +1349,46 @@ export function SessionWhiteboard({
       className={
         fullscreen
           ? "fixed inset-0 z-50 flex flex-col bg-surface"
-          : "flex h-[calc(100dvh-15rem)] min-h-[520px] flex-col overflow-hidden rounded-lg border border-border bg-surface"
+          : "flex h-[calc(100dvh-13.5rem)] min-h-[420px] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-sm"
       }
     >
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
-        <p role="status" className={`text-caption ${saveState === "error" ? "font-semibold text-danger" : "text-muted"}`}>
-          {readOnlyProp
-            ? "Hanya lihat (sesi sudah berakhir). Geser dan perbesar tetap bisa."
-            : student
-              ? readOnly
-                ? "Guru sedang mengunci papan. Anda tetap bisa melihat, menggeser, dan memperbesar."
-                : "Papan bersama: gambar Anda langsung terlihat oleh guru."
-              : SAVE_LABEL[saveState]}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-bg/50 px-3 py-2">
+        <p
+          role="status"
+          className={`inline-flex items-center gap-1.5 text-caption ${
+            saveState === "error"
+              ? "font-semibold text-danger"
+              : student && readOnly
+                ? "rounded-md bg-warning/15 px-2.5 py-1 font-semibold text-warning"
+                : student
+                  ? "rounded-md bg-primary-tint px-2.5 py-1 font-medium text-primary"
+                  : "text-muted"
+          }`}
+        >
+          {!readOnlyProp && !student && (
+            <span
+              aria-hidden="true"
+              className={`size-2 shrink-0 rounded-full ${
+                saveState === "error"
+                  ? "bg-danger"
+                  : saveState === "saving" || saveState === "dirty"
+                    ? "bg-warning motion-safe:animate-pulse"
+                    : "bg-success"
+              }`}
+            />
+          )}
+          {student && (readOnly ? <Lock size={13} strokeWidth={2} aria-hidden="true" /> : <PencilLine size={13} strokeWidth={2} aria-hidden="true" />)}
+          <span>
+            {readOnlyProp
+              ? "Hanya lihat (sesi sudah berakhir). Geser dan perbesar tetap bisa."
+              : student
+                ? readOnly
+                  ? "Guru sedang mengunci papan. Anda tetap bisa melihat, menggeser, dan memperbesar."
+                  : "Papan bersama: gambar Anda langsung terlihat oleh guru."
+                : SAVE_LABEL[saveState]}
+          </span>
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {live && (
             <span
               className={`inline-flex min-h-7 items-center gap-1.5 rounded-full px-2.5 text-caption font-semibold ${sync.online ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}
@@ -1293,37 +1405,35 @@ export function SessionWhiteboard({
               onClick={() => void sync.setStudentsDraw(!sync.drawAllowed).then((ok) => !ok && toast.error("Gagal mengubah izin menggambar. Coba lagi."))}
               aria-pressed={sync.drawAllowed}
               title={sync.drawAllowed ? "Siswa bisa menggambar di papan. Klik untuk mengunci." : "Hanya Anda yang bisa menggambar. Klik agar siswa bisa ikut menggambar."}
-              className={`inline-flex min-h-9 select-none items-center gap-1.5 rounded-md px-3 text-caption font-semibold transition-colors ${
-                sync.drawAllowed ? "border border-border text-ink hover:bg-bg" : "bg-warning/15 text-warning"
+              className={`inline-flex min-h-8 select-none items-center gap-1.5 rounded-md px-2.5 text-caption font-semibold transition-colors ${
+                sync.drawAllowed ? "border border-border bg-surface text-ink hover:bg-bg" : "bg-warning/15 text-warning"
               }`}
             >
-              {sync.drawAllowed ? <PencilLine size={16} strokeWidth={1.75} aria-hidden="true" /> : <Lock size={16} strokeWidth={1.75} aria-hidden="true" />}
+              {sync.drawAllowed ? <PencilLine size={15} strokeWidth={1.75} aria-hidden="true" /> : <Lock size={15} strokeWidth={1.75} aria-hidden="true" />}
               {sync.drawAllowed ? "Siswa boleh menggambar" : "Papan dikunci"}
             </button>
           )}
-          {fullscreen && !readOnly && !student && (
+          {!readOnly && !student && (
             <button
               type="button"
+              title="Buka atau tutup panel materi, mindmap, visualisasi, dan kuis"
               onClick={() => setPanelOpen((value) => !value)}
               aria-pressed={panelOpen}
-              className={`inline-flex min-h-9 select-none items-center gap-1.5 rounded-md px-3 text-caption font-semibold transition-colors ${
-                panelOpen ? "bg-primary text-white" : "border border-border text-ink hover:bg-bg"
+              className={`inline-flex min-h-8 select-none items-center gap-1.5 rounded-md px-2.5 text-caption font-semibold transition-colors ${
+                panelOpen ? "bg-primary text-white" : "border border-border bg-surface text-ink hover:bg-bg"
               }`}
             >
-              <BookOpen size={16} strokeWidth={1.75} aria-hidden="true" />
+              <BookOpen size={15} strokeWidth={1.75} aria-hidden="true" />
               Materi
             </button>
           )}
           <button
             type="button"
-            onClick={() => {
-              setFullscreen((value) => !value);
-              setPanelOpen(false);
-            }}
+            onClick={() => setFullscreen((value) => !value)}
             aria-pressed={fullscreen}
-            className="inline-flex min-h-9 select-none items-center gap-1.5 rounded-md px-3 text-caption font-semibold text-ink transition-colors hover:bg-bg"
+            className="inline-flex min-h-8 select-none items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 text-caption font-semibold text-ink transition-colors hover:bg-bg"
           >
-            {fullscreen ? <Minimize2 size={16} strokeWidth={1.75} aria-hidden="true" /> : <Maximize2 size={16} strokeWidth={1.75} aria-hidden="true" />}
+            {fullscreen ? <Minimize2 size={15} strokeWidth={1.75} aria-hidden="true" /> : <Maximize2 size={15} strokeWidth={1.75} aria-hidden="true" />}
             {fullscreen ? "Keluar layar penuh" : "Layar penuh"}
             {fullscreen && <kbd className="rounded border border-border bg-bg px-1 text-[10px] font-semibold text-muted">Esc</kbd>}
           </button>
@@ -1469,7 +1579,7 @@ export function SessionWhiteboard({
         )}
 
         {!readOnly && (
-          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3" style={fullscreen && panelOpen ? { paddingRight: panelPx + 24 } : undefined}>
+          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3" style={panelOpen && !student ? { paddingRight: panelPx + 24 } : undefined}>
             <div className="pointer-events-auto max-w-full">
               <ToolBar tool={tool} onTool={setTool} />
             </div>
@@ -1556,7 +1666,7 @@ export function SessionWhiteboard({
                 area={size}
                 readOnly={readOnly}
                 onToggle={toggleMindmapNode}
-                onAsk={fullscreen && !readOnly && !student ? askNode : undefined}
+                onAsk={!readOnly && !student ? askNode : undefined}
                 onClose={() => setNodeDetail(null)}
               />
             ) : null;
@@ -1583,14 +1693,20 @@ export function SessionWhiteboard({
           />
         )}
 
-        {fullscreen && panelOpen && !readOnly && !student && <MaterialPanel material={material} width={panelPx} maxWidth={panelMax} onResize={setPanelWidth} askRequest={askRequest} onAskSent={() => setAskRequest(null)} onAddMindmap={addMindmap} onAddNote={addNote} onAddFlow={addFlow} onAddQuiz={sessionId && !readOnly ? addQuiz : undefined} addingQuiz={openingQuiz} onClose={() => setPanelOpen(false)} />}
+        {panelOpen && !readOnly && !student && <MaterialPanel material={material} width={panelPx} maxWidth={panelMax} onResize={setPanelWidth} askRequest={askRequest} onAskSent={() => setAskRequest(null)} onAddMindmap={addMindmap} onAddNote={addNote} onAddFlow={addFlow} onAddQuiz={sessionId && !readOnly ? addQuiz : undefined} addingQuiz={openingQuiz} onClose={() => setPanelOpen(false)} />}
+
+        {openQuiz && !resultsQuiz && !showDiagramPanel && (
+          <div className="absolute bottom-3 z-10" style={{ right: 12 + materialRight }}>
+            <QuizActivityPill sessionId={sessionId} quizId={openQuiz.quizId} title={openQuiz.title} channel={live?.channel ?? null} onOpen={() => setResultsQuiz(openQuiz.quizId)} />
+          </div>
+        )}
 
         {resultsQuiz && !student && (
           <QuizResultsPanel sessionId={sessionId} quizId={resultsQuiz} channel={live?.channel ?? null} onClosedQuiz={markQuizClosed} onClose={() => setResultsQuiz(null)} />
         )}
 
         {elements.length === 0 && !editing && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6" style={fullscreen && panelOpen && !readOnly ? { paddingRight: panelPx + 24 } : undefined}>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6" style={panelOpen && !readOnly && !student ? { paddingRight: panelPx + 24 } : undefined}>
             <div className="flex max-w-md flex-col items-center gap-3 text-center">
               <span className="flex size-12 items-center justify-center rounded-full bg-primary-tint text-primary">
                 <PencilLine size={22} strokeWidth={1.75} aria-hidden="true" />

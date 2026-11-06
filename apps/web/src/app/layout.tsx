@@ -8,8 +8,8 @@ const poppins = Poppins({ variable: "--font-poppins", subsets: ["latin"], weight
 const jetbrainsMono = JetBrains_Mono({ variable: "--font-jetbrains-mono", subsets: ["latin"], weight: ["500"] });
 
 export const metadata: Metadata = {
-  title: { default: "Adikara", template: "%s · Adikara" },
-  description: "Ruang kelas interaktif: guru membuka sesi dengan PIN, siswa masuk dalam hitungan detik.",
+  title: { default: "NusaCodeAI", template: "%s · NusaCodeAI" },
+  description: "Platform kelas koding & algoritma interaktif berbasis AI: materi visual, papan tulis kolaboratif, kuis, dan latihan soal blok & JavaScript.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

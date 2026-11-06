@@ -35,7 +35,7 @@ test("a class shares the board and takes a quiz", async ({ browser, request }) =
   const teacherCanvas = teacher.page.getByRole("application", { name: "Kanvas papan tulis" });
   const studentBoard = student.page.getByRole("region", { name: "Papan tulis kelas" });
 
-  await test.step("a shape the teacher draws appears on the student's board", async () => {
+  await test.step("a shape the teacher draws and moves appears on the student's board in real time", async () => {
     await teacher.page.getByRole("tab", { name: "Papan tulis" }).click();
     await expect(teacher.page.getByText("Live")).toBeVisible();
     const box = (await teacherCanvas.boundingBox())!;
@@ -45,6 +45,27 @@ test("a class shares the board and takes a quiz", async ({ browser, request }) =
     await teacher.page.mouse.move(box.x + 420, box.y + 300, { steps: 8 });
     await teacher.page.mouse.up();
     await expect(student.page.getByText("Papan masih kosong")).toBeHidden();
+
+    const studentCanvas = student.page.getByRole("application", { name: "Kanvas papan tulis" });
+    const drawnRect = studentCanvas.locator("g rect").first();
+    await expect(drawnRect).toBeVisible();
+    const initialX = Number(await drawnRect.getAttribute("x"));
+
+    // Move the selected shape on the teacher's board; student sees the move in real time without refreshing
+    await teacher.page.keyboard.press("Shift+ArrowRight");
+    await expect.poll(async () => Number(await drawnRect.getAttribute("x"))).toBeGreaterThan(initialX);
+  });
+
+  await test.step("the student can also move the shape on the shared board in real time", async () => {
+    const studentCanvas = student.page.getByRole("application", { name: "Kanvas papan tulis" });
+    const studentRect = studentCanvas.locator("g rect").first();
+    const teacherRect = teacherCanvas.locator("g rect").first();
+    const beforeTeacherX = Number(await teacherRect.getAttribute("x"));
+
+    await studentRect.click({ force: true });
+    await student.page.keyboard.press("Shift+ArrowRight");
+    await expect.poll(async () => Number(await teacherRect.getAttribute("x"))).toBeGreaterThan(beforeTeacherX);
+    await expect.poll(async () => Number(await studentRect.getAttribute("x"))).toBeGreaterThan(beforeTeacherX);
   });
 
   await test.step("the student sees the teacher's cursor with the teacher's name", async () => {

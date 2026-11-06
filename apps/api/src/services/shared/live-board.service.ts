@@ -23,7 +23,9 @@ export interface LiveBoardService {
   snapshot(auth: AuthContext, session: SessionRecord): Promise<LiveSnapshot>;
   apply(auth: AuthContext, sessionId: string, input: LiveInput): Promise<LiveResult>;
   /** The teacher saved the whole board: the live copy follows it. */
-  replace(sessionId: string, elements: Record<string, unknown>[]): void;
+  replace(sessionId: string, elements: Record<string, unknown>[], by?: string): void;
+  /** Writes any pending live board changes to the database right away. */
+  flush?(sessionId: string): Promise<void>;
 }
 
 interface Live {
@@ -158,14 +160,17 @@ export function createLiveBoardService(core: SessionCore, store: LiveBoardStore)
       }
       if (changes === 0) return result;
 
-      // a student draws only while the class is running and the teacher allows it, and only on what they drew
+      // a student draws or moves shapes while the class is running and the teacher allows it; only the teacher may delete teacher shapes or touch quizzes
       const studentMay = !teacher && session.status === "ACTIVE" && live.drawAllowed;
-      const mayTouch = (id: string) => teacher || (studentMay && (!live.elements.has(id) || live.owners.get(id) === actor.id));
+      const isQuiz = (el?: Record<string, unknown>) => el?.type === "quiz";
+      const mayUpsert = (id: string, incoming: Record<string, unknown>) =>
+        teacher || (studentMay && !isQuiz(live.elements.get(id)) && !isQuiz(incoming));
+      const mayDelete = (id: string) => teacher || (studentMay && (!live.elements.has(id) || live.owners.get(id) === actor.id));
       const upserts: Record<string, unknown>[] = [];
       const deletes: string[] = [];
       for (const element of input.upserts ?? []) {
         const id = element.id as string;
-        if (!mayTouch(id)) {
+        if (!mayUpsert(id, element)) {
           const kept = live.elements.get(id);
           if (kept) result.revert.upserts.push(kept);
           else result.revert.deletes.push(id);
@@ -179,7 +184,7 @@ export function createLiveBoardService(core: SessionCore, store: LiveBoardStore)
       }
       for (const id of input.deletes ?? []) {
         if (!live.elements.has(id)) continue;
-        if (!mayTouch(id)) {
+        if (!mayDelete(id)) {
           result.revert.upserts.push(live.elements.get(id)!);
           continue;
         }
@@ -194,14 +199,51 @@ export function createLiveBoardService(core: SessionCore, store: LiveBoardStore)
       return result;
     },
 
-    replace(sessionId, elements) {
+    replace(sessionId, elements, by = "teacher") {
       const pending = boards.get(sessionId);
       if (!pending) return; // nobody is drawing live; the database already has it
       void pending.then((live) => {
-        live.elements = new Map(elements.flatMap((e) => (typeof e.id === "string" ? [[e.id, e] as const] : [])));
-        for (const id of live.owners.keys()) if (!live.elements.has(id)) live.owners.delete(id);
+        const next = new Map<string, Record<string, unknown>>();
+        const upserts: Record<string, unknown>[] = [];
+        for (const element of elements) {
+          if (typeof element.id !== "string") continue;
+          const clean = { ...element };
+          delete clean.createdBy;
+          const current = live.elements.get(element.id);
+          // Do not overwrite an element that was moved more recently on the live channel while this save was in flight.
+          if (current && typeof current.version === "number" && typeof clean.version === "number" && current.version > clean.version) {
+            next.set(element.id, current);
+            continue;
+          }
+          next.set(element.id, clean);
+          if (!current || JSON.stringify(current) !== JSON.stringify(clean)) {
+            upserts.push(clean);
+          }
+        }
+        const deletes: string[] = [];
+        for (const id of live.elements.keys()) {
+          if (!next.has(id)) {
+            live.owners.delete(id);
+            deletes.push(id);
+          }
+        }
+        live.elements = next;
         live.lastUsed = Date.now();
+        if (upserts.length || deletes.length) {
+          hub.publish(sessionId, { type: "board_ops", data: { by, upserts, deletes } }, "all");
+        }
+        scheduleSave(sessionId, live);
       });
+    },
+
+    async flush(sessionId) {
+      const pending = boards.get(sessionId);
+      if (!pending) return;
+      const live = await pending;
+      if (live.saveTimer) {
+        clearTimeout(live.saveTimer);
+        await save(sessionId, live);
+      }
     },
   };
 }

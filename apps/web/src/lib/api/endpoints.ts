@@ -14,11 +14,22 @@ import type {
   LoginResult,
   MessageView,
   NewQuiz,
+  Problem,
+  ProblemMaterial,
+  ProblemSummary,
+  ProblemAttemptView,
+  ProblemResults,
+  PuzzleGrade,
+  PuzzleNode,
+  Challenge,
+  SessionProblemView,
+  StudentProblem,
   PublicUser,
   QuizChoiceChange,
   QuizResults,
   QuizView,
   StudentQuiz,
+  TeacherInsights,
   SendMessageResult,
   SessionDetail,
   SessionView,
@@ -36,6 +47,30 @@ export const authApi = {
 
 export const classesApi = {
   list: (token: string) => apiFetch<{ items: ClassView[] }>("/classes", { token }),
+};
+
+export const insightsApi = {
+  overview: (token: string) => apiFetch<TeacherInsights>("/insights", { token }),
+};
+
+export const problemsApi = {
+  /** `material`: one material's (its id), or "none" for problems without one. */
+  list: (token: string, material?: string) =>
+    apiFetch<{ items: ProblemSummary[] }>(material ? `/problems?material=${encodeURIComponent(material)}` : "/problems", { token }),
+  materials: (token: string) => apiFetch<{ items: ProblemMaterial[] }>("/problems/materials", { token }),
+  get: (token: string, id: string) => apiFetch<{ problem: Problem }>(`/problems/${id}`, { token }),
+  create: (token: string, title: string, story: string, materialId: string | null) =>
+    apiFetch<{ problem: Problem }>("/problems", { method: "POST", token, body: { title, story, material_id: materialId } }),
+  generate: (token: string, materialId: string, focus: string | null, count: number) =>
+    apiFetch<{ items: Problem[] }>("/problems/generate", { method: "POST", token, body: { material_id: materialId, focus, count } }),
+  regenerate: (token: string, id: string, focus?: string | null) =>
+    apiFetch<{ problem: Problem }>(`/problems/${id}/regenerate`, { method: "POST", token, body: focus === undefined ? {} : { focus } }),
+  save: (token: string, id: string, body: { title: string; story: string; challenge: Challenge; material_id?: string | null }) =>
+    apiFetch<{ problem: Problem }>(`/problems/${id}`, { method: "PUT", token, body }),
+  setStatus: (token: string, id: string, status: Problem["status"]) => apiFetch<{ problem: Problem }>(`/problems/${id}/status`, { method: "POST", token, body: { status } }),
+  duplicate: (token: string, id: string) => apiFetch<{ problem: Problem }>(`/problems/${id}/duplicate`, { method: "POST", token, body: {} }),
+  remove: (token: string, id: string) => apiFetch<void>(`/problems/${id}`, { method: "DELETE", token }),
+  check: (token: string, id: string, answer: PuzzleNode[]) => apiFetch<PuzzleGrade>(`/problems/${id}/check`, { method: "POST", token, body: { answer } }),
 };
 
 export const teacherSessionsApi = {
@@ -82,6 +117,23 @@ export const studentQuizzesApi = {
   answer: (token: string, sessionId: string, quizId: string, body: { question_id: number; choice: string; time_ms: number; visits: number; changes: QuizChoiceChange[] }) =>
     apiFetch<{ answered: number; total: number }>(`/sessions/${sessionId}/quizzes/${quizId}/attempt/answers`, { method: "PUT", token, body }),
   submit: (token: string, sessionId: string, quizId: string) => apiFetch<StudentQuiz>(`/sessions/${sessionId}/quizzes/${quizId}/attempt/submit`, { method: "POST", token, body: {} }),
+};
+
+export const teacherSessionProblemsApi = {
+  send: (token: string, sessionId: string, problemId: string) =>
+    apiFetch<{ problem: SessionProblemView }>(`/sessions/${sessionId}/problems`, { method: "POST", token, body: { problem_id: problemId } }),
+  list: (token: string, sessionId: string) => apiFetch<{ items: (SessionProblemView & { opened: number; solved: number })[] }>(`/sessions/${sessionId}/problems`, { token }),
+  results: (token: string, sessionId: string, id: string) => apiFetch<ProblemResults>(`/sessions/${sessionId}/problems/${id}/results`, { token }),
+  close: (token: string, sessionId: string, id: string) => apiFetch<{ problem: SessionProblemView }>(`/sessions/${sessionId}/problems/${id}/close`, { method: "POST", token, body: {} }),
+};
+
+export const studentSessionProblemsApi = {
+  open: (token: string, sessionId: string) => apiFetch<{ items: (SessionProblemView & { solved: boolean })[] }>(`/sessions/${sessionId}/open-problems`, { token }),
+  play: (token: string, sessionId: string, id: string) => apiFetch<StudentProblem>(`/sessions/${sessionId}/problems/${id}`, { token }),
+  check: (token: string, sessionId: string, id: string, answer: PuzzleNode[]) =>
+    apiFetch<{ grade: PuzzleGrade; attempt: ProblemAttemptView }>(`/sessions/${sessionId}/problems/${id}/check`, { method: "POST", token, body: { answer } }),
+  code: (token: string, sessionId: string, id: string, body: { code: string; passed: number; total: number }) =>
+    apiFetch<{ solved: boolean; attempt: ProblemAttemptView }>(`/sessions/${sessionId}/problems/${id}/code`, { method: "POST", token, body }),
 };
 
 export const teacherChatsApi = {

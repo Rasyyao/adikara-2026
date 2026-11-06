@@ -160,6 +160,24 @@ h1, h2, h3 {
   animation: backdrop-in 200ms var(--ease) both;
 }
 
+/* The problem popup: the page dims and the activity rises in front of it, like a whiteboard pushing an activity. */
+.pdialog-backdrop {
+  animation: backdrop-in 200ms var(--ease) both;
+}
+
+.pdialog {
+  animation: pdialog-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pdialog-in {
+  from { opacity: 0; transform: translateY(24px) scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdialog-backdrop,
+  .pdialog { animation: none; }
+}
+
 .modal[data-closing]::backdrop {
   animation: backdrop-out 200ms var(--ease) both;
 }
@@ -389,4 +407,352 @@ h1, h2, h3 {
   .diagram-dot {
     display: none;
   }
+}
+
+/* ---- Problem-solving blocks ---------------------------------------------------------------------------------
+   Blocks are cards in a code-like stack: a coloured bar and icon say the kind, loops and ifs indent what they hold
+   behind a guide line and close with an "akhir …" mark, and a thin connector runs from one step to the next so the
+   flow reads top to bottom. Colours come in as --fill (the kind's colour) and --edge (a darker shade). */
+
+.pstack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.pstack > [data-node] { position: relative; }
+/* the flow line from one step down to the next */
+.pstack > [data-node]:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 26px;
+  bottom: -10px;
+  width: 2px;
+  height: 10px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+}
+
+.pblock-btn {
+  display: block;
+  max-width: 100%;
+  border-radius: 12px;
+  text-align: left;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  transition: transform 160ms ease-out, opacity 160ms ease-out;
+}
+.pblock-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.pblock-btn:disabled { cursor: default; }
+
+.pcard {
+  --ring: transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 170px;
+  min-height: 44px;
+  padding: 7px 14px 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--fill) 26%, var(--border));
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 4px 0 0 var(--fill), 0 0 0 3px var(--ring), 0 1px 2px rgb(16 24 40 / 0.06);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  transition: box-shadow 160ms ease-out, border-color 160ms ease-out, background-color 160ms ease-out, transform 160ms ease-out;
+}
+.pcard__icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fill) 13%, var(--surface));
+  color: var(--fill);
+}
+/* the start of a program: a filled pill */
+.pcard--start {
+  border-color: transparent;
+  border-radius: 999px;
+  padding-left: 12px;
+  padding-right: 18px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--fill) 88%, white), var(--fill));
+  box-shadow: 0 0 0 3px var(--ring), 0 2px 6px -2px color-mix(in srgb, var(--fill) 70%, transparent);
+  color: var(--k-ink, var(--ink));
+}
+.pcard--start .pcard__icon { border-radius: 999px; background: rgb(255 255 255 / 0.45); color: var(--k-ink, var(--ink)); }
+/* the head of a loop or if: tinted, so it reads as the opening line of a group */
+.pcard--head { background: color-mix(in srgb, var(--fill) 7%, var(--surface)); }
+.pcard__state {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  border-radius: 999px;
+  color: white;
+}
+
+.pblock-btn:not(:disabled):hover .pcard {
+  transform: translateY(-1px);
+  box-shadow: inset 4px 0 0 var(--fill), 0 0 0 3px var(--ring), 0 6px 14px -6px rgb(16 24 40 / 0.22);
+}
+.pblock-btn:not(:disabled):hover .pcard--start { box-shadow: 0 0 0 3px var(--ring), 0 6px 14px -6px color-mix(in srgb, var(--fill) 80%, transparent); }
+.pblock-btn[data-selected="true"] .pcard { --ring: var(--primary-tint); border-color: var(--primary); }
+.pblock-btn[data-state="right"] .pcard { --ring: color-mix(in srgb, var(--success) 16%, transparent); border-color: var(--success); }
+.pblock-btn[data-state="misplaced"] .pcard { --ring: color-mix(in srgb, var(--warning) 18%, transparent); border-color: var(--warning); }
+.pblock-btn[data-state="extra"] .pcard { --ring: color-mix(in srgb, var(--danger) 16%, transparent); border-color: var(--danger); }
+.pcard__state--right { background: var(--success); }
+.pcard__state--misplaced { background: var(--warning); }
+.pcard__state--extra { background: var(--danger); }
+/* the step running now, while the flow plays */
+.pblock-btn[data-active="true"] .pcard {
+  --ring: rgb(255 210 63 / 0.45);
+  border-color: #e0a800;
+  background: #fff8e1;
+  transform: translateX(6px);
+}
+.pblock-btn[data-active="true"] .pcard--start { background: linear-gradient(180deg, #ffe27a, #f2b705); }
+
+/* a loop or if: what it holds is indented behind a guide line in its colour, closed by an "akhir …" mark */
+.pgroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: fit-content;
+  max-width: 100%;
+}
+.pgroup__body {
+  min-width: 140px;
+  min-height: 40px;
+  margin-left: 26px;
+  padding: 10px 0 10px 20px;
+  border-left: 2px solid color-mix(in srgb, var(--fill) 50%, transparent);
+}
+.pgroup__end {
+  position: relative;
+  margin-left: 26px;
+  padding: 0 0 0 22px;
+  height: 18px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  color: color-mix(in srgb, var(--fill) 75%, var(--ink));
+}
+.pgroup__end::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 14px;
+  height: 9px;
+  border-left: 2px solid color-mix(in srgb, var(--fill) 50%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--fill) 50%, transparent);
+  border-bottom-left-radius: 8px;
+}
+.pblock__slot {
+  display: block;
+  min-width: 160px;
+  padding: 8px 12px;
+  border: 2px dashed color-mix(in srgb, var(--fill) 40%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fill) 5%, transparent);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---- A running program ---------------------------------------------------------------------------------------
+   A glowing marker glides from block to block; blocks already run keep a soft trail and the line to the next step lights
+   up; a running loop's guide line marches and its head shows the round; an if shows its check. */
+.pflow-token {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #f2b705;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px rgb(242 183 5 / 0.45), 0 0 14px rgb(242 183 5 / 0.9);
+  pointer-events: none;
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pflow-token::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 2px solid #f2b705;
+  border-radius: 999px;
+  opacity: 0;
+}
+.pblock-btn[data-visited="true"] .pcard:not(.pcard--start) {
+  border-color: color-mix(in srgb, #e0a800 45%, var(--border));
+  background: color-mix(in srgb, #fff8e1 70%, var(--surface));
+}
+.pstack > [data-node][data-visited="true"]:not(:last-child)::after {
+  background: #f2b705;
+  box-shadow: 0 0 6px rgb(242 183 5 / 0.7);
+}
+.pgroup__body { position: relative; }
+.pgroup[data-running="true"] > .pgroup__body { border-left-color: transparent; }
+.pgroup[data-running="true"] > .pgroup__body::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(to bottom, #f2b705 0 7px, transparent 7px 12px);
+  background-size: 2px 24px;
+}
+.pcard__round {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fff1c2;
+  color: #7a5200;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pcard__round + .pcard__state { margin-left: 6px; }
+.pcard__round--ok { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); }
+
+.pblock-dragging,
+.pblock-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  cursor: grabbing !important;
+}
+
+.pworkspace {
+  background-color: var(--surface);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* where a dragged block will land */
+.pdrop-line {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-tint), 0 0 14px color-mix(in srgb, var(--primary) 60%, transparent);
+}
+.pdrop-line::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.pghost {
+  transform: rotate(-2deg) scale(1.03);
+  filter: drop-shadow(0 16px 20px rgb(16 24 40 / 0.22));
+}
+
+/* ---- Motion: only when the reader has not asked for less ------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  /* a block snapping into place */
+  [data-fresh="true"] > .pblock-btn,
+  [data-fresh="true"] > .pgroup {
+    animation: pblock-snap 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  /* graded: right blocks light up one after another, wrong ones shake */
+  .pblock-btn[data-state="right"] { animation: pblock-right 520ms ease-out both; animation-delay: calc(var(--i, 0) * 60ms); }
+  .pblock-btn[data-state="misplaced"],
+  .pblock-btn[data-state="extra"] { animation: pblock-shake 420ms ease-in-out both; animation-delay: calc(var(--i, 0) * 40ms); }
+  .pblock-btn[data-active="true"] { transition: filter 120ms ease-out, transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .pdrop-line { animation: pdrop-pulse 900ms ease-in-out infinite; }
+  .pstage-enter { animation: pstage-in 360ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+  .ppop { animation: pblock-snap 420ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .pconfetti > span { animation: pconfetti 1100ms cubic-bezier(0.15, 0.7, 0.35, 1) forwards; }
+  .pbreathe { animation: pbreathe 1.8s ease-in-out infinite; }
+  /* a running program */
+  .pflow-token::after { animation: pflow-ripple 1.1s ease-out infinite; }
+  .pblock-btn[data-active="true"] .pcard:not(.pcard--start) { animation: pflow-active 1.1s ease-in-out infinite; }
+  .pblock-btn[data-looping="true"] .pcard__icon svg { animation: pflow-spin 600ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .pgroup[data-running="true"] > .pgroup__body::before { animation: pflow-march 700ms linear infinite; }
+  .pgroup[data-looping="true"] > .pgroup__body::before { animation: pflow-march 260ms linear infinite reverse; }
+  .pstack > [data-node][data-visited="true"]:not(:last-child)::after { animation: pflow-line 380ms ease-out; transform-origin: top; }
+  .pfinished .pblock-btn[data-visited="true"] .pcard,
+  .pfinished .pblock-btn[data-active="true"] .pcard { animation: pflow-done 900ms ease-out both; animation-delay: calc(var(--i, 0) * 70ms); }
+}
+
+@keyframes pblock-snap {
+  0% { transform: translateY(-6px) scale(0.94); opacity: 0.5; }
+  70% { transform: translateY(1px) scale(1.02); opacity: 1; }
+  100% { transform: none; }
+}
+@keyframes pblock-right {
+  0% { transform: none; }
+  40% { transform: translateX(3px) scale(1.03); }
+  100% { transform: none; }
+}
+@keyframes pblock-shake {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-6px) rotate(-1deg); }
+  40% { transform: translateX(5px) rotate(1deg); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+@keyframes pdrop-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@keyframes pstage-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pbreathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 45%, transparent); }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--primary) 0%, transparent); }
+}
+@keyframes pflow-ripple {
+  0% { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+@keyframes pflow-active {
+  0%, 100% { box-shadow: inset 4px 0 0 var(--fill), 0 0 0 3px rgb(255 210 63 / 0.45), 0 1px 2px rgb(16 24 40 / 0.06); }
+  50% { box-shadow: inset 4px 0 0 var(--fill), 0 0 0 7px rgb(255 210 63 / 0.25), 0 6px 16px -6px rgb(224 168 0 / 0.6); }
+}
+@keyframes pflow-spin {
+  from { transform: rotate(0); }
+  to { transform: rotate(-360deg); }
+}
+@keyframes pflow-march {
+  from { background-position: 0 0; }
+  to { background-position: 0 24px; }
+}
+@keyframes pflow-line {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes pflow-done {
+  0% { background: var(--surface); }
+  35% { background: color-mix(in srgb, var(--success) 18%, var(--surface)); border-color: var(--success); transform: translateX(3px); }
+  100% { background: color-mix(in srgb, var(--success) 7%, var(--surface)); border-color: color-mix(in srgb, var(--success) 50%, var(--border)); }
+}
+@keyframes pconfetti {
+  0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pblock-btn { transition: none; }
+  .pblock-btn:not(:disabled):hover .pcard,
+  .pblock-btn[data-active="true"] .pcard { transform: none; }
+  .pconfetti { display: none; }
+  .pflow-token { transition: none; }
 }

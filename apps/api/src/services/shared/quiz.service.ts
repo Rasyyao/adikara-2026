@@ -98,6 +98,8 @@ export interface QuizResults {
     started_at: string;
     submitted_at: string | null;
   }[];
+  /** Students in the session who have not opened the quiz yet; `online` is false once they dropped out of the session. */
+  waiting: { student_id: string; name: string; username: string | null; online: boolean }[];
   questions: {
     id: number;
     question: string;
@@ -260,7 +262,13 @@ export function createQuizService(core: SessionCore, repository: QuizRepository)
 
     async results(auth, sessionId, quizId) {
       const { session, quiz } = await teacherQuiz(auth, sessionId, quizId);
-      const [attempts, joined] = await Promise.all([repository.listAttempts(quiz.id), core.countJoined(session.id)]);
+      const [attempts, participants] = await Promise.all([repository.listAttempts(quiz.id), sessions.listParticipants(session.id)]);
+      const present = participants.filter((p) => !p.kickedAt);
+      const joined = present.length;
+      const begun = new Set(attempts.map((a) => a.studentId));
+      const waiting = present
+        .filter((p) => !begun.has(p.studentId))
+        .map((p) => ({ student_id: p.studentId, name: p.name ?? p.username ?? "Siswa", username: p.username, online: !p.leftAt }));
       const total = quiz.questions.length;
       const order = ranking(attempts);
       const submitted = order.map(scoreOf);
@@ -316,6 +324,7 @@ export function createQuizService(core: SessionCore, repository: QuizRepository)
           average_duration_ms: round(mean(order.flatMap((a) => (a.durationMs === null ? [] : [a.durationMs]))), 0),
         },
         leaderboard,
+        waiting,
         questions,
       };
     },

@@ -6,7 +6,7 @@ import { MaterialsTable } from "@/components/dashboard/teacher-tables";
 import { CenteredLoader } from "@/components/ui/loaders";
 import { teacherChatsApi } from "@/lib/api/endpoints";
 import { requireViewer } from "@/lib/auth/dal";
-import { TEACHER_MATERIALS, type FileKind, type MaterialRow } from "@/lib/dummy/teacher";
+import type { FileKind, MaterialRow } from "@/lib/dummy/teacher";
 
 export const metadata = { title: "Materi kelas" };
 
@@ -33,7 +33,7 @@ async function MaterialsList() {
   const listRes = await teacherChatsApi.list(token).catch(() => ({ items: [] }));
 
   const details = await Promise.all(
-    listRes.items.slice(0, 20).map((chat) =>
+    listRes.items.slice(0, 30).map((chat) =>
       teacherChatsApi
         .get(token, chat.id)
         .then((res) => res)
@@ -41,14 +41,14 @@ async function MaterialsList() {
     ),
   );
 
-  const apiRows: MaterialRow[] = details.map(({ chat, materials }) => ({
+  const rows: MaterialRow[] = details.map(({ chat, materials }) => ({
     id: chat.id,
     title: chat.title,
-    className: "X RPL 1",
-    subject: "Percakapan AI",
+    className: "Semua kelas",
+    subject: materials.length > 0 ? "Modul & Asisten AI" : "Percakapan AI",
     fileCount: materials.length,
     updatedAt: formatDateId(chat.created_at),
-    status: "DRAF",
+    status: materials.some((m) => m.status === "EXTRACTED") ? "DIPUBLIKASIKAN" : "DRAF",
     sources: materials.map((m) => ({
       id: m.id,
       title: m.title,
@@ -60,7 +60,6 @@ async function MaterialsList() {
     messages: [],
   }));
 
-  const rows = [...apiRows, ...TEACHER_MATERIALS];
   return <MaterialsTable title={`${rows.length} materi`} rows={rows} />;
 }
 

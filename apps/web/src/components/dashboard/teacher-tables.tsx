@@ -88,11 +88,20 @@ export function SessionsTable({ title, rows }: { title: string; rows: SessionRow
               visible.map((row) => (
                 <tr key={row.id} className={BODY_ROW}>
                   <Cell>
-                    <Primary title={row.className} subtitle={row.topic} />
+                    {isUuid(row.id) ? (
+                      <Link href={`/teacher/sessions/${row.id}`} className="group block">
+                        <p className="text-body font-semibold text-ink transition-colors duration-150 ease-out group-hover:text-primary">
+                          {row.className}
+                        </p>
+                        <p className="truncate text-small text-muted">{row.topic}</p>
+                      </Link>
+                    ) : (
+                      <Primary title={row.className} subtitle={row.topic} />
+                    )}
                   </Cell>
                   <Cell className="whitespace-nowrap text-muted">{row.date}</Cell>
                   <Cell>
-                    <ProgressCell percent={Math.round((row.present / row.total) * 100)} detail={`${row.present}/${row.total}`} />
+                    <ProgressCell percent={Math.round((row.present / Math.max(1, row.total)) * 100)} detail={`${row.present}/${row.total}`} />
                   </Cell>
                   <Cell>
                     <StatusChip status={row.status} />

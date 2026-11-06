@@ -112,7 +112,7 @@ export function buildChildrenMap(nodes: MindmapNodeItem[]): Map<string | null, M
   const map = new Map<string | null, MindmapNodeItem[]>();
   const validIds = new Set(nodes.map((n) => n.id));
   for (const node of nodes) {
-    const pid = node.parent_id && validIds.has(node.parent_id) ? node.parent_id : null;
+    const pid = node.parent_id && node.parent_id !== node.id && validIds.has(node.parent_id) ? node.parent_id : null;
     const list = map.get(pid) ?? [];
     list.push(node);
     map.set(pid, list);
@@ -132,7 +132,10 @@ export function layoutMindmap(
   const nodeById = new Map<string, LayoutNode>();
 
   const colWidths = new Map<number, number>();
+  const measuredIds = new Set<string>();
   const visitMeasure = (node: MindmapNodeItem, depth: number) => {
+    if (measuredIds.has(node.id)) return;
+    measuredIds.add(node.id);
     const box = measureNodeBox(node.label, depth);
     colWidths.set(depth, Math.max(colWidths.get(depth) ?? 0, box.width));
     if (collapsedIds.has(node.id)) return;
@@ -142,16 +145,18 @@ export function layoutMindmap(
 
   const colX = new Map<number, number>();
   let runningX = 0;
-  for (let d = 0; d <= 10; d++) {
+  for (let d = 0; d <= 16; d++) {
     colX.set(d, runningX);
     runningX += (colWidths.get(d) ?? 200) + HORIZONTAL_GAP;
   }
 
   let leafCursorY = 0;
+  const placedIds = new Set<string>();
 
   const placeSubtree = (node: MindmapNodeItem, depth: number, branchIndex: number): LayoutNode => {
+    placedIds.add(node.id);
     const box = measureNodeBox(node.label, depth);
-    const kids = childrenMap.get(node.id) ?? [];
+    const kids = (childrenMap.get(node.id) ?? []).filter((k) => !placedIds.has(k.id));
     const isCollapsed = collapsedIds.has(node.id);
     const x = colX.get(depth) ?? depth * (210 + HORIZONTAL_GAP);
 

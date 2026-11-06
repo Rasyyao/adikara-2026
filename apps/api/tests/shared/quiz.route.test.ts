@@ -80,6 +80,18 @@ describe("quizzes in a session", () => {
     expect(data.rows.filter((r: { student_name: string }) => r.student_name === "Siswa Dua").map((r: { answered: boolean }) => r.answered)).toEqual([true, false]);
   });
 
+  it("lists the students in the session who have not opened the quiz yet", async () => {
+    const { as, teacher } = await classWithQuiz();
+    await as("satu").start();
+    const results = (await teacher("/results")).body;
+    expect(results.waiting.map((w: { name: string; online: boolean }) => [w.name, w.online])).toEqual([
+      ["Siswa Dua", true],
+      ["Siswa Tiga", true],
+    ]);
+    await as("dua").start();
+    expect((await teacher("/results")).body.waiting.map((w: { name: string }) => w.name)).toEqual(["Siswa Tiga"]);
+  });
+
   it("closing hands in whoever is still answering and stops new answers", async () => {
     const { app, id, quizId, as, teacher } = await classWithQuiz();
     await as("tiga").start();

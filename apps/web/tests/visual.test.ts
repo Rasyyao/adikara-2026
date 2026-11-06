@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { extractMindmapFromContent } from "@/components/materials/mindmap-parse";
 import { diagramPseudocode, diagramSteps } from "@/components/session/board/diagram";
 import { extractVisualFromContent, parseVisual, setVisualSaved, visualElements, type Visual } from "@/components/session/board/visual";
 
@@ -113,5 +114,95 @@ describe("which visuals play", () => {
   it("a timeline has no code, so it is only shown", () => {
     const els = visualElements(parseVisual({ type: "timeline", title: "T", items: [{ label: "a" }, { label: "b" }] })!);
     expect(diagramPseudocode(els, idOf(els))).toEqual([]);
+  });
+});
+
+describe("extracting mindmap payloads from AI replies", () => {
+  it("parses worker mindmap JSON even when React Flow edges and node.data are included", () => {
+    const reply = [
+      "Berikut peta konsep materi ini:",
+      "```mindmap",
+      JSON.stringify(
+        {
+          title: "Modul Pemrograman C#",
+          nodes: [
+            {
+              id: "n1",
+              parent_id: null,
+              type: "root",
+              label: "Modul Pemrograman C#",
+              text: "Jelaskan keseluruhan isi materi Modul Pemrograman C# secara ringkas.",
+              source: null,
+              data: {
+                label: "Modul Pemrograman C#",
+                text: "Jelaskan keseluruhan isi materi Modul Pemrograman C# secara ringkas.",
+                source: null,
+                type: "root",
+              },
+            },
+            {
+              id: "n2",
+              parent_id: "n1",
+              type: "materi",
+              label: "TOPIK 1: HELLO, PROGRAMMING !",
+              text: "Jelaskan materi tentang TOPIK 1: HELLO, PROGRAMMING !",
+              source: "Halaman 1",
+              data: {
+                label: "TOPIK 1: HELLO, PROGRAMMING !",
+                text: "Jelaskan materi tentang TOPIK 1: HELLO, PROGRAMMING !",
+                source: "Halaman 1",
+                type: "materi",
+              },
+            },
+          ],
+          edges: [{ id: "e-n1-n2", source: "n1", target: "n2" }],
+        },
+        null,
+        2,
+      ),
+      "```",
+    ].join("\n");
+
+    const extracted = extractMindmapFromContent(reply);
+    expect(extracted).not.toBeNull();
+    expect(extracted?.mindmap.title).toBe("Modul Pemrograman C#");
+    expect(extracted?.mindmap.nodes).toHaveLength(2);
+    expect(extracted?.mindmap.nodes[1]).toMatchObject({
+      id: "n2",
+      parent_id: "n1",
+      label: "TOPIK 1: HELLO, PROGRAMMING !",
+      source: "Halaman 1",
+    });
+  });
+
+  it("recovers complete nodes when a mindmap JSON block is truncated mid-stream", () => {
+    const truncated = `\`\`\`mindmap
+{
+  "title": "Modul Pemrograman C#",
+  "nodes": [
+    {
+      "id": "n1",
+      "parent_id": null,
+      "label": "Modul Pemrograman C#",
+      "text": "Jelaskan keseluruhan isi materi"
+    },
+    {
+      "id": "n2",
+      "parent_id": "n1",
+      "label": "TOPIK 1: HELLO, PROGRAMMING !",
+      "text": "Jelaskan TOPIK 1"
+    },
+    {
+      "id": "n3",
+      "parent_id": "n1",
+      "Data terpotong`;
+
+    const extracted = extractMindmapFromContent(truncated);
+    expect(extracted).not.toBeNull();
+    expect(extracted?.mindmap.nodes.map((n) => n.id)).toEqual(["n1", "n2"]);
+  });
+
+  it("does not mistake a flow visual for a mindmap", () => {
+    expect(extractMindmapFromContent("```json\n" + JSON.stringify(FLOW) + "\n```")).toBeNull();
   });
 });

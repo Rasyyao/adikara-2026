@@ -16,7 +16,10 @@ export type SessionEventType =
   | "cursor"
   | "quiz_opened"
   | "quiz_closed"
-  | "quiz_progress";
+  | "quiz_progress"
+  | "problem_opened"
+  | "problem_closed"
+  | "problem_progress";
 
 export interface SessionEvent {
   type: SessionEventType;

@@ -1,4 +1,4 @@
-# Adikara
+# NusaCodeAI
 
 Developer docs (structure, adding features, tests, auth, database): see [`docs/`](docs/README.md).
 
