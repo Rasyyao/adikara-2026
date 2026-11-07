@@ -6,6 +6,8 @@ import type {
   ChatMessagesResponse,
   ChatView,
   ClassView,
+  ClassDetail,
+  StudentView,
   BoardResponse,
   BoardScene,
   EndSessionResponse,
@@ -30,6 +32,8 @@ import type {
   QuizView,
   StudentQuiz,
   TeacherInsights,
+  ClassInsights,
+  ClassReport,
   SendMessageResult,
   SessionDetail,
   SessionView,
@@ -47,10 +51,26 @@ export const authApi = {
 
 export const classesApi = {
   list: (token: string) => apiFetch<{ items: ClassView[] }>("/classes", { token }),
+  get: (token: string, id: string) => apiFetch<ClassDetail>(`/classes/${id}`, { token }),
+  create: (token: string, body: { name: string; class_code?: string }) =>
+    apiFetch<{ class: ClassView }>("/classes", { method: "POST", token, body }),
+  update: (token: string, id: string, body: { name?: string; archived?: boolean }) =>
+    apiFetch<{ class: ClassView }>(`/classes/${id}`, { method: "PATCH", token, body }),
+  remove: (token: string, id: string) => apiFetch<void>(`/classes/${id}`, { method: "DELETE", token }),
+  addStudent: (token: string, classId: string, body: { username: string; name: string; password: string }) =>
+    apiFetch<{ student: StudentView }>(`/classes/${classId}/students`, { method: "POST", token, body }),
+  updateStudent: (token: string, classId: string, studentId: string, body: { username?: string; name?: string; password?: string; class_id?: string }) =>
+    apiFetch<{ student: StudentView }>(`/classes/${classId}/students/${studentId}`, { method: "PATCH", token, body }),
+  removeStudent: (token: string, classId: string, studentId: string) =>
+    apiFetch<void>(`/classes/${classId}/students/${studentId}`, { method: "DELETE", token }),
 };
 
 export const insightsApi = {
   overview: (token: string) => apiFetch<TeacherInsights>("/insights", { token }),
+  forClass: (token: string, classId: string) => apiFetch<ClassInsights>(`/insights/classes/${classId}`, { token }),
+  requestFeedback: (token: string, classId: string) =>
+    apiFetch<{ report: ClassReport }>(`/insights/classes/${classId}/feedback`, { method: "POST", token, body: {} }),
+  feedback: (token: string, classId: string) => apiFetch<{ report: ClassReport | null }>(`/insights/classes/${classId}/feedback`, { token }),
 };
 
 export const problemsApi = {

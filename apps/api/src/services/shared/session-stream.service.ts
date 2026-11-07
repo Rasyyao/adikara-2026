@@ -60,12 +60,17 @@ export function createSessionStreamService(core: SessionCore, liveBoard?: LiveBo
       });
 
       if (viewer.kind === "student") {
-        core.cancelLeave(session.id, viewer.studentId);
-        // A student coming back after the grace period is "joined" again.
-        const current = await sessions.findParticipant(session.id, viewer.studentId);
-        if (current?.leftAt && !current.kickedAt) {
-          const back = await sessions.updateParticipant(session.id, viewer.studentId, { leftAt: null });
-          hub.publish(session.id, core.joinedEvent(back, await core.countJoined(session.id)), "staff");
+        try {
+          core.cancelLeave(session.id, viewer.studentId);
+          // A student coming back after the grace period is "joined" again.
+          const current = await sessions.findParticipant(session.id, viewer.studentId);
+          if (current?.leftAt && !current.kickedAt) {
+            const back = await sessions.updateParticipant(session.id, viewer.studentId, { leftAt: null });
+            hub.publish(session.id, core.joinedEvent(back, await core.countJoined(session.id)), "staff");
+          }
+        } catch (err) {
+          unsubscribeHub();
+          throw err;
         }
       }
 
@@ -78,6 +83,7 @@ export function createSessionStreamService(core: SessionCore, liveBoard?: LiveBo
           for (const event of waiting) sink.send(event);
         },
         unsubscribe() {
+          queue = null;
           unsubscribeHub();
           if (viewer.kind === "student" && hub.countStudent(session.id, viewer.studentId) === 0) {
             core.scheduleLeave(session.id, viewer.studentId);

@@ -55,13 +55,14 @@ describe("login rate limiting", () => {
     expect(res.status).toBe(429);
   });
 
-  it("shares one counter between teacher and student login", async () => {
+  it("counts per account, so one account is stopped but a class on the same IP is not", async () => {
     const { app } = await buildTestApp({ config: { loginRateLimitMax: 2 } });
-    await request(app).post(PATHS.studentLogin).send({ username: "siswa.satu", password: "wrong-pass-1" });
     await loginTeacher(app, "teacher@example.com", "wrong-pass-1");
+    await loginTeacher(app, "Teacher@Example.com", "wrong-pass-1"); // same account, other casing
+    expect((await loginTeacher(app, "teacher@example.com", "wrong-pass-1")).status).toBe(429);
 
-    const res = await loginTeacher(app, "teacher@example.com", "wrong-pass-1");
-    expect(res.status).toBe(429);
+    // another account from the same IP still gets its own attempts
+    expect((await request(app).post(PATHS.studentLogin).send({ username: "siswa.satu", password: "wrong-pass-1" })).status).toBe(401);
   });
 
   it("does not rate limit /me", async () => {

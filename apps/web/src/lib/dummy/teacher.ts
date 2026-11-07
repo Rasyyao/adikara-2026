@@ -4,6 +4,8 @@ export interface ClassSummary {
   id: string;
   name: string;
   subject: string;
+  /** The class code, when the row is a real class (needed to edit it). */
+  code?: string;
   students: number;
   attendanceRate: number;
   lastSession: string;
@@ -17,6 +19,10 @@ export interface SessionRow {
   present: number;
   total: number;
   status: "ACTIVE" | "ENDED";
+  /** Quizzes run in the session. */
+  quizzes?: number;
+  /** Average share of correct answers, 0-100, or null when nothing was answered. */
+  correctRate?: number | null;
 }
 
 export type MaterialStatus = "DIPUBLIKASIKAN" | "DISETUJUI" | "DRAF";

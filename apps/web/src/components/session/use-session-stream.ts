@@ -79,6 +79,8 @@ export function useSessionStream(sessionId: string, onEvent: StreamHandler, role
               if (type === "session_ended" || type === "kicked") {
                 closedByLifecycle = true;
                 setStatus("closed");
+                // the server ends the stream; without this the browser would keep reconnecting on its own
+                current.close();
               }
               handlerRef.current(type, data as Record<string, unknown>);
             }
@@ -96,13 +98,16 @@ export function useSessionStream(sessionId: string, onEvent: StreamHandler, role
         connect();
       }
     };
-    window.addEventListener("online", connect);
+    const onOnline = () => {
+      if (!closedByLifecycle && (!source || source.readyState === EventSource.CLOSED)) connect();
+    };
+    window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onWake);
 
     return () => {
       closedByLifecycle = true;
       if (retryTimer) clearTimeout(retryTimer);
-      window.removeEventListener("online", connect);
+      window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onWake);
       source?.close();
     };

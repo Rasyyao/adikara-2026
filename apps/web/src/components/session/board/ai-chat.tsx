@@ -181,7 +181,7 @@ export function AiChat({
             const textDiagram = blocks.length > code.length;
             const flow = code.filter((c) => hasIfElse(c.code)).map((c) => flowchartOf(c.code)).find((f) => f !== null) ?? null;
             return (
-              <div key={message.id} className="mr-4 flex min-w-0 max-w-[calc(100%-1rem)] flex-col gap-2 self-start">
+              <div key={message.id} className={`mr-4 flex min-w-0 max-w-[calc(100%-1rem)] flex-col gap-2 self-start ${visual ? "w-[calc(100%-1rem)]" : ""}`}>
                 {text && <p className="whitespace-pre-wrap rounded-lg rounded-bl-sm bg-bg px-3 py-2 text-small text-ink [overflow-wrap:anywhere]">{plain(text)}</p>}
 
                 {visual && (

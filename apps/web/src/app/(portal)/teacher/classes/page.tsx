@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { NewClassButton } from "@/components/dashboard/class-management";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { ClassesTable } from "@/components/dashboard/teacher-tables";
 import { CenteredLoader } from "@/components/ui/loaders";
@@ -29,6 +30,7 @@ async function ClassesContent() {
       id: item.id,
       name: item.name,
       subject: `Kode kelas: ${item.class_code}`,
+      code: item.class_code,
       students: item.student_count,
       attendanceRate: stat?.participation_rate !== null && stat?.participation_rate !== undefined ? Math.round(stat.participation_rate * 100) : 0,
       lastSession: formatShortDate(stat?.last_session_at ?? null),
@@ -41,7 +43,7 @@ async function ClassesContent() {
 export default function TeacherClassesPage() {
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title="Kelas" description="Kelas yang Anda ampu semester ini." />
+      <PageHeader title="Kelas" description="Kelas yang Anda ampu semester ini." action={<NewClassButton />} />
       <Suspense fallback={<CenteredLoader label="Memuat daftar kelas…" />}>
         <ClassesContent />
       </Suspense>

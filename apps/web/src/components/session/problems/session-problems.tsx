@@ -2,7 +2,7 @@
 
 import { Activity, BarChart3, CheckCircle2, ChevronDown, Code2, Loader2, Lock, Puzzle, Send, Users, X } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { listReadyProblemsAction } from "@/app/actions/problems";
 import { closeSessionProblemAction, listSessionProblemsAction, problemResultsAction, sendProblemAction } from "@/app/actions/session-problems";
 import { ProblemDialog } from "@/components/problems/problem-dialog";
@@ -11,32 +11,9 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import type { ProblemResults, ProblemSummary, SessionProblemView } from "@/lib/api/types";
 import type { LiveChannel } from "../board/live-sync";
+import { useLiveRefresh } from "../use-live-refresh";
 
 type Row = SessionProblemView & { opened: number; solved: number };
-
-/** Calls `load` at most every 0.8 s while events that `matters` keeps arrive. */
-function useThrottledRefresh(channel: LiveChannel | null, matters: (event: Parameters<Parameters<LiveChannel["subscribe"]>[0]>[0]) => boolean, load: () => void) {
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latest = useRef({ matters, load });
-  useEffect(() => {
-    latest.current = { matters, load };
-  });
-  useEffect(() => {
-    if (!channel) return;
-    const unsubscribe = channel.subscribe((event) => {
-      if (timer.current || !latest.current.matters(event)) return;
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        latest.current.load();
-      }, 800);
-    });
-    return () => {
-      unsubscribe();
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = null;
-    };
-  }, [channel]);
-}
 
 const ModeChips = ({ modes }: { modes: SessionProblemView["modes"] }) => (
   <span className="inline-flex gap-1">
@@ -63,7 +40,7 @@ export function SessionProblems({ sessionId, materialId, channel, live }: { sess
       alive = false;
     };
   }, [sessionId]);
-  useThrottledRefresh(channel, (e) => e.type === "problem", () => void load());
+  useLiveRefresh(channel, (e) => e.type === "problem", () => void load());
 
   const open = (items ?? []).filter((p) => p.status === "open").reverse();
   const closed = (items ?? []).filter((p) => p.status === "closed").reverse();
@@ -292,7 +269,7 @@ export function ProblemResultsPanel({ sessionId, problemId, channel, onClosed, o
       alive = false;
     };
   }, [problemId, sessionId]);
-  useThrottledRefresh(channel, (e) => (e.type === "problem" ? e.problemId === problemId : e.type === "presence"), () => void load());
+  useLiveRefresh(channel, (e) => (e.type === "problem" ? e.problemId === problemId : e.type === "presence"), () => void load());
 
   const close = async () => {
     setClosing(true);

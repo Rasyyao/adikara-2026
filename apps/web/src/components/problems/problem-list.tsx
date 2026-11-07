@@ -4,7 +4,7 @@ import { AlertTriangle, BookOpen, CheckCircle2, CircleDashed, Copy, Eye, Loader2
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
-import { createProblemAction, deleteProblemAction, duplicateProblemAction, regenerateProblemAction } from "@/app/actions/problems";
+import { createProblemAction, deleteProblemAction, duplicateProblemAction, getProblemAction, regenerateProblemAction } from "@/app/actions/problems";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
@@ -16,14 +16,31 @@ import { GenerateButton } from "./generate-dialog";
 
 const dateTime = (iso: string) => new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(iso));
 
-/** Re-reads the page while the AI is writing a draft, so it appears without a reload. */
-export function useRefreshWhile(active: boolean, every = 4000) {
+/**
+ * Waits for the AI drafts without re-rendering the page: it only asks the server about the pending drafts (cheap
+ * actions) and refreshes the page once, when one of them is done.
+ */
+export function useRefreshWhile(pendingIds: string[], every = 4000) {
   const router = useRouter();
+  const key = pendingIds.join(",");
   useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(() => router.refresh(), every);
-    return () => clearInterval(timer);
-  }, [active, every, router]);
+    if (!key) return;
+    const ids = key.split(",");
+    let stopped = false;
+    const timer = setInterval(async () => {
+      const results = await Promise.all(ids.map((id) => getProblemAction(id)));
+      if (stopped) return;
+      if (results.some((r) => r.ok && r.data.generation !== "pending")) {
+        stopped = true;
+        clearInterval(timer);
+        router.refresh();
+      }
+    }, every);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [key, every, router]);
 }
 
 /** "Buat manual": an empty four-pillar template or the worked example, filed under a material if one is picked. */
@@ -284,7 +301,7 @@ export function ProblemList({ items: all, materials, filter }: { items: ProblemS
   const toast = useToast();
   const [removing, setRemoving] = useState<ProblemSummary | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  useRefreshWhile(all.some((i) => i.generation === "pending"));
+  useRefreshWhile(all.filter((i) => i.generation === "pending").map((i) => i.id));
   const items = filter === undefined ? all : all.filter((i) => (filter === "none" ? !i.material : i.material?.id === filter));
 
   const run = async (id: string, action: () => Promise<{ ok: boolean; message?: string }>, done: string) => {

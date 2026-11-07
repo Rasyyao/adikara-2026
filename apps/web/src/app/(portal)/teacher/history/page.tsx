@@ -32,6 +32,8 @@ async function HistoryContent() {
     present: s.joined,
     total: Math.max(1, s.class_size),
     status: s.status === "ENDED" ? "ENDED" : "ACTIVE",
+    quizzes: s.quizzes,
+    correctRate: s.correct_rate === null ? null : Math.round(s.correct_rate * 100),
   }));
 
   return <SessionsTable title={`${rows.length} sesi`} rows={rows} />;

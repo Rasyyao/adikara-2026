@@ -5,6 +5,7 @@ import type { Role } from "../../src/types/auth.types.js";
 import type { ClassRow } from "../../src/types/shared/class.types.js";
 import type { ParticipantRecord, SessionRecord } from "../../src/types/shared/session.types.js";
 import type { BoardRecord } from "../../src/types/teacher/session.types.js";
+import type { ClassReportRecord } from "../../src/types/teacher/insights.types.js";
 import { createFakeProblemRepository } from "./fake-problem-repository.js";
 import { createFakeSessionProblemRepository } from "./fake-session-problem-repository.js";
 import { createFakeQuizRepository } from "./fake-quiz-repository.js";
@@ -84,8 +85,10 @@ export interface FakeDatabase {
   /** Materials by id, with the chat they were sent in and the storage key. */
   materials: Map<string, ChatMaterialRow & NewMaterial & { chatId: string }>;
   /** The queue: what the API would insert into `jobs`, in order. `notified` counts the NOTIFYs sent after a commit. */
-  jobs: { type: "EXTRACT" | "CHAT_REPLY"; payload: Record<string, string>; status: "QUEUED" | "RUNNING" | "DONE" | "FAILED" }[];
+  jobs: { type: "EXTRACT" | "CHAT_REPLY" | "GENERATE_REPORT"; payload: Record<string, string>; status: "QUEUED" | "RUNNING" | "DONE" | "FAILED" }[];
   queue: { notified: number };
+  /** AI feedback reports per class, newest last (a test plays the AI worker by editing them). */
+  reports: ClassReportRecord[];
   /** Block problems, with the generation jobs the API queued and the stored rows (a test plays the AI worker on them). */
   problems: ReturnType<typeof createFakeProblemRepository>;
 }
@@ -153,6 +156,7 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
   const chatMessages: ChatMessageRow[] = [];
   const materials: FakeDatabase["materials"] = new Map();
   const jobs: FakeDatabase["jobs"] = [];
+  const reports: ClassReportRecord[] = [];
   const queue = { notified: 0 };
   const problems = createFakeProblemRepository(chats, materials);
   const key = (sessionId: string, studentId: string) => `${sessionId}:${studentId}`;
@@ -453,15 +457,15 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
         },
       },
       insights: {
-        async loadActivity(teacherId, sessionLimit) {
+        async loadActivity(teacherId, sessionLimit, classId) {
           const own = [...sessions.values()]
-            .filter((s) => !teacherId || s.teacherId === teacherId)
+            .filter((s) => (!teacherId || s.teacherId === teacherId) && (!classId || s.classId === classId))
             .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
             .slice(0, sessionLimit);
           const quizRows = (await Promise.all(own.map((s) => quizzes.listQuizzes(s.id)))).flat();
           return {
             classes: [...classesById.values()]
-              .filter((c) => !c.archived && (!teacherId || c.teacherId === teacherId))
+              .filter((c) => (classId ? c.id === classId : !c.archived) && (!teacherId || c.teacherId === teacherId))
               .sort(byNameThenId((c) => c.name))
               .map((c) => ({ id: c.id, name: c.name, studentCount: classStudents(c.id).length })),
             sessions: own.map((s) => ({
@@ -479,6 +483,25 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
             })),
             quizzes: await Promise.all(quizRows.map(async (quiz) => ({ quiz, attempts: await quizzes.listAttempts(quiz.id) }))),
           };
+        },
+        async findClass(classId) {
+          const c = classesById.get(classId);
+          return c ? { id: c.id, teacherId: c.teacherId, name: c.name } : null;
+        },
+        async listRoster(classId) {
+          return classStudents(classId)
+            .map((st) => ({ id: st.id, name: st.name, username: st.username }))
+            .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+        },
+        async createReport({ classId, teacherId, input }) {
+          const report: ClassReportRecord = { id: randomUUID(), classId, teacherId, status: "pending", input, feedback: null, error: null, createdAt: new Date(), finishedAt: null };
+          reports.push(report);
+          jobs.push({ type: "GENERATE_REPORT", payload: { reportId: report.id, classId }, status: "QUEUED" });
+          return { ...report };
+        },
+        async latestReport(classId) {
+          const own = reports.filter((r) => r.classId === classId);
+          return own.length ? { ...own[own.length - 1] } : null;
         },
       },
       problems,
@@ -557,5 +580,5 @@ export async function createFakeDatabase(): Promise<FakeDatabase> {
     },
   };
 
-  return { repositories, problems, teachersById, studentsById, classesById, sessions, participants, studentsWithRecords, teachersWithData, chats, chatMessages, materials, jobs, queue };
+  return { repositories, reports, problems, teachersById, studentsById, classesById, sessions, participants, studentsWithRecords, teachersWithData, chats, chatMessages, materials, jobs, queue };
 }

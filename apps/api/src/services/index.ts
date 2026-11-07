@@ -46,16 +46,23 @@ export async function createServices(repositories: Repositories, tokens: TokenSe
     findTeacherName: async (id) => (await repositories.shared.profile.findTeacherById(id))?.name ?? null,
   });
 
+  const adminStudents = createAdminStudentService(repositories.admin.students, repositories.admin.classes, options);
+  const adminClasses = createAdminClassService(repositories.admin.classes, repositories.admin.teachers);
+
   return {
     admin: {
       teachers: createAdminTeacherService(repositories.admin.teachers, options),
-      students: createAdminStudentService(repositories.admin.students, repositories.admin.classes, options),
-      classes: createAdminClassService(repositories.admin.classes, repositories.admin.teachers),
+      students: adminStudents,
+      classes: adminClasses,
     },
     teacher: {
       auth: createTeacherAuthService(repositories.teacher.auth, credentials),
       sessions: createTeacherSessionService(repositories.teacher.sessions, core, liveBoard),
-      classes: createTeacherClassService(repositories.teacher.classes),
+      classes: createTeacherClassService(repositories.teacher.classes, {
+        classes: adminClasses,
+        students: adminStudents,
+        studentRepository: repositories.admin.students,
+      }),
       chats: createTeacherChatService(repositories.teacher.chats, options.storage ?? createObjectStorage(null)),
       insights: createTeacherInsightsService(repositories.teacher.insights, core.options.now),
       problems: createTeacherProblemService(repositories.teacher.problems),

@@ -1,10 +1,11 @@
 "use client";
 
 import { Activity, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { quizResultsAction } from "@/app/actions/quizzes";
 import type { QuizResults } from "@/lib/api/types";
 import type { LiveChannel } from "../board/live-sync";
+import { useLiveRefresh } from "../use-live-refresh";
 
 /**
  * A small live counter on the board while a quiz is open: how many finished, are answering, and have not started. It
@@ -12,7 +13,6 @@ import type { LiveChannel } from "../board/live-sync";
  */
 export function QuizActivityPill({ sessionId, quizId, title, channel, onOpen }: { sessionId: string; quizId: string; title: string; channel: LiveChannel | null; onOpen: () => void }) {
   const [results, setResults] = useState<QuizResults | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(() => quizResultsAction(sessionId, quizId).then((r) => r.ok && setResults(r.data)), [quizId, sessionId]);
 
@@ -24,23 +24,7 @@ export function QuizActivityPill({ sessionId, quizId, title, channel, onOpen }: 
     };
   }, [quizId, sessionId]);
 
-  // students answering or joining: refresh at most every 0.8 s; a join changes who has "not started"
-  useEffect(() => {
-    if (!channel) return;
-    const unsubscribe = channel.subscribe((event) => {
-      if (timer.current) return;
-      if (event.type === "quiz" ? event.quizId !== quizId : event.type !== "presence") return;
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        void load();
-      }, 800);
-    });
-    return () => {
-      unsubscribe();
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = null;
-    };
-  }, [channel, load, quizId]);
+  useLiveRefresh(channel ?? null, (event) => (event.type === "quiz" ? event.quizId === quizId : event.type === "presence"), load);
 
   const done = results?.leaderboard.filter((r) => r.status === "submitted").length ?? 0;
   const busy = results?.leaderboard.filter((r) => r.status === "in_progress").length ?? 0;

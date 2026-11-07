@@ -5,10 +5,10 @@ import { ACCOUNTS, API_URL } from "./env";
 export async function login(page: Page, as: { email: string } | { username: string }) {
   await page.goto("/login");
   if ("email" in as) {
-    await page.getByText("Guru", { exact: true }).click();
+    await page.getByRole("group").getByText("Guru", { exact: true }).click(); // the role toggle, not the preview picture
     await page.getByLabel("Email").fill(as.email);
   } else {
-    await page.getByText("Siswa", { exact: true }).click();
+    await page.getByRole("group").getByText("Siswa", { exact: true }).click();
     await page.getByLabel("Nama pengguna").fill(as.username);
   }
   await page.getByRole("textbox", { name: "Kata sandi" }).fill(ACCOUNTS.password);

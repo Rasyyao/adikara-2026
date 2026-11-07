@@ -29,7 +29,7 @@ export function VisualThumb({ visual, className = "" }: { visual: Visual; classN
       aria-hidden="true"
       viewBox={`${box.x - pad} ${box.y - pad} ${box.w + pad * 2} ${box.h + pad * 2}`}
       preserveAspectRatio="xMidYMid meet"
-      className={`pointer-events-none block w-full rounded-md bg-bg ${className}`}
+      className={`pointer-events-none block rounded-md bg-bg ${className}`}
     >
       {elements.map((el) => (
         <ElementView key={el.id} el={el} still />

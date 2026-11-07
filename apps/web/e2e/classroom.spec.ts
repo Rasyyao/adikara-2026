@@ -120,7 +120,7 @@ test("a class shares the board and takes a quiz", async ({ browser, request }) =
     await teacher.page.getByRole("tab", { name: "Kontrol sesi" }).click();
     const list = teacher.page.getByRole("region", { name: "Kuis sesi ini" });
     await expect(list.getByText(QUIZ.title)).toBeVisible();
-    await expect(list.getByText(/1 selesai/)).toBeVisible();
+    await expect(list.getByText(/1 selesai/).first()).toBeVisible(); // the summary line and the "1/1 selesai" counter both match
     await list.getByRole("button", { name: "Lihat hasil" }).click();
 
     const panel = teacher.page.getByRole("dialog", { name: "Hasil kuis" });

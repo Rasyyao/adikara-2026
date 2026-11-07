@@ -188,7 +188,7 @@ export function VisualCard({
     : undefined;
 
   return (
-    <div className="@container flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-surface p-3 sm:p-4">
+    <div className="@container flex w-full min-w-0 max-w-full flex-col gap-3 rounded-lg border border-border bg-surface p-3 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary-tint text-primary">

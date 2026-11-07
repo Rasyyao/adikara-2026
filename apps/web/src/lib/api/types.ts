@@ -29,6 +29,27 @@ export interface ClassView {
   created_at: string;
 }
 
+/** A student in a class (GET /classes/:id). */
+export interface ClassStudent {
+  id: string;
+  username: string | null;
+  name: string | null;
+}
+
+export interface ClassDetail {
+  class: ClassView;
+  students: ClassStudent[];
+}
+
+/** A student account with the class it belongs to (create and edit answers). */
+export interface StudentView {
+  id: string;
+  username: string | null;
+  name: string | null;
+  class: { id: string; name: string; class_code: string };
+  created_at: string;
+}
+
 export interface SessionView {
   id: string;
   class_id: string;
@@ -332,6 +353,34 @@ export interface TeacherInsights {
     weakest_topic: string | null;
     missed: { quiz_title: string; question: string; topic: string; picked: string | null; picked_text: string | null; answer: string; answer_text: string | null }[];
   }[];
+}
+
+/** AI feedback for the teacher about one class (written by the AI worker). */
+export interface ReportFeedback {
+  summary: string;
+  focus_topics: { topic: string; finding: string; suggestion: string }[];
+  questions: { question: string; misconception: string; suggestion: string }[];
+  students: { name: string; reason: string; action: string }[];
+  next_steps: string[];
+}
+
+export interface ClassReport {
+  id: string;
+  status: "pending" | "done" | "failed";
+  created_at: string;
+  finished_at: string | null;
+  error: string | null;
+  feedback: ReportFeedback | null;
+}
+
+/** GET /insights/classes/:id: the dashboard numbers for one class, with attendance per session and the latest AI feedback. */
+export interface ClassInsights extends TeacherInsights {
+  class: { id: string; name: string; student_count: number };
+  attendance: {
+    sessions: { id: string; date: string; material_title: string | null; status: SessionStatus }[];
+    students: { student_id: string; name: string; username: string | null; present: boolean[]; attended: number; rate: number | null }[];
+  };
+  report: ClassReport | null;
 }
 
 // ---- Problems (problem solving: one challenge, blocks and/or JavaScript) -------------------

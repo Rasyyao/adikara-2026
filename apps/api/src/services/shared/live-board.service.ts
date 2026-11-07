@@ -26,6 +26,11 @@ export interface LiveBoardService {
   replace(sessionId: string, elements: Record<string, unknown>[], by?: string): void;
   /** Writes any pending live board changes to the database right away. */
   flush?(sessionId: string): Promise<void>;
+  /**
+   * Drops the remembered access of one person (a removed student) or of everyone (the session ended), so their next
+   * change is checked against the database instead of being let through for the rest of the cache's lifetime.
+   */
+  forget?(sessionId: string, userId?: string): void;
 }
 
 interface Live {
@@ -109,7 +114,9 @@ export function createLiveBoardService(core: SessionCore, store: LiveBoardStore)
   const actorOf = async (auth: AuthContext, sessionId: string): Promise<Access> => {
     const key = `${sessionId}:${auth.userId}`;
     const cached = access.get(key);
-    if (cached && cached.expires > Date.now()) return cached;
+    // a class that ran out of time is checked again (and closed) instead of being drawn on with remembered access
+    const timedOut = cached?.session.expiresAt != null && cached.session.expiresAt.getTime() <= Date.now();
+    if (cached && cached.expires > Date.now() && !timedOut) return cached;
     let entry: Access;
     if (auth.kind === "teacher") {
       const session = await core.loadManaged(auth, sessionId);
@@ -132,6 +139,18 @@ export function createLiveBoardService(core: SessionCore, store: LiveBoardStore)
   };
 
   return {
+    forget(sessionId, userId) {
+      if (userId !== undefined) access.delete(`${sessionId}:${userId}`);
+      else {
+        for (const key of [...access.keys()]) if (key.startsWith(`${sessionId}:`)) access.delete(key);
+        // the whole session is done with: once nothing waits to be saved, the live copy is let go
+        const pending = boards.get(sessionId);
+        void pending?.then((live) => {
+          if (!live.saveTimer && boards.get(sessionId) === pending) boards.delete(sessionId);
+        });
+      }
+    },
+
     async snapshot(auth, session) {
       const [live, { actor }] = await Promise.all([load(session.id), actorOf(auth, session.id)]);
       return { board: { elements: [...live.elements.values()] }, draw_allowed: live.drawAllowed, me: actor };

@@ -60,6 +60,7 @@ enum JobType {
   GENERATE_PACKAGE @map("generate_package")
   GENERATE_PROBLEM @map("generate_problem")
   CHAT_REPLY       @map("chat_reply")
+  GENERATE_REPORT  @map("generate_report")
 
   @@map("job_type")
 }
@@ -86,12 +87,12 @@ enum Role {
 }
 
 model Teacher {
-  id           String      @id @default(uuid()) @db.Uuid
-  email        String      @unique
-  passwordHash String      @map("password_hash")
+  id           String         @id @default(uuid()) @db.Uuid
+  email        String         @unique
+  passwordHash String         @map("password_hash")
   name         String
-  role         Role        @default(TEACHER)
-  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  role         Role           @default(TEACHER)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
   classrooms   Classroom[]
   sessions     ClassSession[]
   chats        Chat[]
@@ -114,9 +115,29 @@ model Classroom {
   students   Student[]
   sessions   ClassSession[]
   packages   ClassPackage[]
+  reports    ClassReport[]
 
   @@index([teacherId])
   @@map("classes")
+}
+
+/// AI feedback for a teacher about one class: `input` is the snapshot of the class's results the AI read (so the
+/// feedback stays explainable after new sessions), `feedback` what the AI worker wrote back.
+model ClassReport {
+  id         String    @id @default(uuid()) @db.Uuid
+  classId    String    @map("class_id") @db.Uuid
+  teacherId  String    @map("teacher_id") @db.Uuid
+  /// "pending" until the AI worker fills it, then "done" or "failed"
+  status     String    @default("pending")
+  input      Json
+  feedback   Json?
+  error      String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz
+  classroom  Classroom @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@index([classId, createdAt])
+  @@map("class_reports")
 }
 
 model Student {
@@ -286,21 +307,21 @@ model QuizResponse {
 /// `chatId` is the material it belongs to. An AI draft is written by the worker (job `generate_problem`): `generation`
 /// is "pending" until then, "failed" (with `generationError`, safe to show) when it could not be made, else null.
 model BlockProblem {
-  id              String        @id @default(uuid()) @db.Uuid
-  teacherId       String        @map("teacher_id") @db.Uuid
-  chatId          String?       @map("chat_id") @db.Uuid
+  id              String           @id @default(uuid()) @db.Uuid
+  teacherId       String           @map("teacher_id") @db.Uuid
+  chatId          String?          @map("chat_id") @db.Uuid
   title           String
-  story           String        @default("")
-  status          ContentStatus @default(DRAF)
+  story           String           @default("")
+  status          ContentStatus    @default(DRAF)
   challenge       Json
-  origin          String        @default("manual") // manual | ai
-  aiFocus         String?       @map("ai_focus")
+  origin          String           @default("manual") // manual | ai
+  aiFocus         String?          @map("ai_focus")
   generation      String?
-  generationError String?       @map("generation_error")
-  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  teacher         Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  chat            Chat?         @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  generationError String?          @map("generation_error")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  teacher         Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  chat            Chat?            @relation(fields: [chatId], references: [id], onDelete: SetNull)
   sent            SessionProblem[]
 
   @@index([teacherId, updatedAt])
@@ -427,16 +448,16 @@ model MaterialChunk {
 // ---------- Materi dan paket ----------
 
 model Material {
-  id            String         @id @default(uuid()) @db.Uuid
-  teacherId     String         @map("teacher_id") @db.Uuid
+  id            String          @id @default(uuid()) @db.Uuid
+  teacherId     String          @map("teacher_id") @db.Uuid
   title         String
-  filePath      String         @map("file_path")
-  fileType      String         @map("file_type") // pdf | pptx
-  extractedText String?        @map("extracted_text")
-  status        MaterialStatus @default(UPLOADED)
+  filePath      String          @map("file_path")
+  fileType      String          @map("file_type") // pdf | pptx
+  extractedText String?         @map("extracted_text")
+  status        MaterialStatus  @default(UPLOADED)
   error         String? // why extraction failed; safe to show the teacher
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  teacher       Teacher        @relation(fields: [teacherId], references: [id])
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  teacher       Teacher         @relation(fields: [teacherId], references: [id])
   packages      Package[]
   chunks        MaterialChunk[]
   chats         ChatMaterial[]

@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Clock, Eye, FileEdit, FileText, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { CheckCircle2, Clock, Eye, FileEdit, FileText, MessageSquare, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useId, useMemo, useState } from "react";
 import { deleteChatAction } from "@/app/actions/chats";
@@ -10,6 +10,7 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { isUuid } from "@/lib/validation/auth";
 import type { ClassSummary, MaterialRow, MaterialStatus, SessionRow } from "@/lib/dummy/teacher";
+import { EditClassButton } from "./class-management";
 import { Cell, EmptyRow, Primary, nextSort, PlainHeader, ProgressCell, SortHeader, TableToolbar, type SortState } from "./table-parts";
 
 const CARD = "overflow-hidden rounded-lg bg-surface";
@@ -22,22 +23,20 @@ function matches(query: string, ...fields: string[]) {
   return !needle || fields.some((field) => field.toLowerCase().includes(needle));
 }
 
-/** View and edit buttons for a class row. They do nothing yet; the pages and handlers come later. */
-function ClassActions({ name }: { name: string }) {
+/** View and edit buttons for a class row. "View" opens the class's recap on the Sesi page; the pencil manages the class. */
+function ClassActions({ id, name, code, students }: { id: string; name: string; code?: string; students: number }) {
   const base = "flex size-11 items-center justify-center rounded-md text-muted transition-colors duration-150 ease-out hover:bg-primary-tint hover:text-primary";
   return (
     <div className="flex items-center justify-end gap-1">
-      <button type="button" title="Lihat detail" aria-label={`Lihat detail ${name}`} className={base}>
+      <Link href={`/teacher/sessions?class=${id}`} title="Lihat data sesi" aria-label={`Lihat data sesi ${name}`} className={base}>
         <Eye size={20} strokeWidth={1.75} aria-hidden="true" />
-      </button>
-      <button type="button" title="Ubah" aria-label={`Ubah ${name}`} className={base}>
-        <Pencil size={20} strokeWidth={1.75} aria-hidden="true" />
-      </button>
+      </Link>
+      <EditClassButton id={id} name={name} code={code} studentCount={students} />
     </div>
   );
 }
 
-type SessionSort = "className" | "attendance";
+type SessionSort = "className" | "date" | "attendance" | "quizzes" | "score";
 
 export function SessionsTable({ title, rows }: { title: string; rows: SessionRow[] }) {
   const [query, setQuery] = useState("");
@@ -47,7 +46,20 @@ export function SessionsTable({ title, rows }: { title: string; rows: SessionRow
   const visible = useMemo(() => {
     const filtered = rows.filter((row) => (status === "ALL" || row.status === status) && matches(query, row.className, row.topic));
     if (!sort) return filtered;
-    const value = (row: SessionRow) => (sort.key === "className" ? row.className : row.present / row.total);
+    const value = (row: SessionRow): string | number => {
+      switch (sort.key) {
+        case "className":
+          return row.className;
+        case "date":
+          return rows.indexOf(row); // rows arrive newest first
+        case "quizzes":
+          return row.quizzes ?? 0;
+        case "score":
+          return row.correctRate ?? -1;
+        default:
+          return row.present / row.total;
+      }
+    };
     const factor = sort.dir === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
       const [x, y] = [value(a), value(b)];
@@ -72,18 +84,21 @@ export function SessionsTable({ title, rows }: { title: string; rows: SessionRow
         onFilter={setStatus}
       />
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse">
+        <table className="w-full min-w-[960px] border-collapse">
           <thead>
             <tr className={HEAD_ROW}>
               <SortHeader label="Kelas" sortKey="className" sort={sort} onSort={(key) => setSort((s) => nextSort(s, key))} />
-              <PlainHeader>Waktu</PlainHeader>
+              <PlainHeader>Materi</PlainHeader>
+              <SortHeader label="Waktu" sortKey="date" sort={sort} onSort={(key) => setSort((s) => nextSort(s, key))} />
               <SortHeader label="Kehadiran" sortKey="attendance" sort={sort} onSort={(key) => setSort((s) => nextSort(s, key))} />
+              <SortHeader label="Kuis" sortKey="quizzes" sort={sort} onSort={(key) => setSort((s) => nextSort(s, key))} />
+              <SortHeader label="Rata-rata nilai" sortKey="score" sort={sort} onSort={(key) => setSort((s) => nextSort(s, key))} />
               <PlainHeader>Status</PlainHeader>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
-              <EmptyRow colSpan={4} query={query} />
+              <EmptyRow colSpan={7} query={query} />
             ) : (
               visible.map((row) => (
                 <tr key={row.id} className={BODY_ROW}>
@@ -93,16 +108,22 @@ export function SessionsTable({ title, rows }: { title: string; rows: SessionRow
                         <p className="text-body font-semibold text-ink transition-colors duration-150 ease-out group-hover:text-primary">
                           {row.className}
                         </p>
-                        <p className="truncate text-small text-muted">{row.topic}</p>
                       </Link>
                     ) : (
-                      <Primary title={row.className} subtitle={row.topic} />
+                      <Primary title={row.className} subtitle="" />
                     )}
+                  </Cell>
+                  <Cell className="max-w-[240px] text-muted">
+                    <span className="block truncate" title={row.topic}>
+                      {row.topic}
+                    </span>
                   </Cell>
                   <Cell className="whitespace-nowrap text-muted">{row.date}</Cell>
                   <Cell>
                     <ProgressCell percent={Math.round((row.present / Math.max(1, row.total)) * 100)} detail={`${row.present}/${row.total}`} />
                   </Cell>
+                  <Cell className="whitespace-nowrap text-muted">{row.quizzes ? `${row.quizzes} kuis` : "–"}</Cell>
+                  <Cell className="whitespace-nowrap font-medium text-ink">{row.correctRate == null ? "–" : `${row.correctRate}%`}</Cell>
                   <Cell>
                     <StatusChip status={row.status} />
                   </Cell>
@@ -169,13 +190,17 @@ export function ClassesTable({ title, rows }: { title: string; rows: ClassSummar
                   <Cell>
                     <Primary title={row.name} subtitle={row.subject} />
                   </Cell>
-                  <Cell>{row.students} siswa</Cell>
+                  <Cell>
+                    <Link href={`/teacher/students?class=${row.id}`} className="font-medium text-ink hover:text-primary">
+                      {row.students} siswa
+                    </Link>
+                  </Cell>
                   <Cell>
                     <ProgressCell percent={row.attendanceRate} />
                   </Cell>
                   <Cell className="whitespace-nowrap text-muted">{row.lastSession}</Cell>
                   <Cell>
-                    <ClassActions name={row.name} />
+                    <ClassActions id={row.id} name={row.name} code={row.code} students={row.students} />
                   </Cell>
                 </tr>
               ))

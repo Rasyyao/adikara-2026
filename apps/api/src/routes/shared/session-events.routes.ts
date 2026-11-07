@@ -10,6 +10,10 @@ import type { RouteGroup } from "../types.js";
 import { liveBoardRoute } from "./live-board.routes.js";
 
 const HEARTBEAT_MS = 25_000;
+/** A client this far behind (bytes waiting in memory) no longer gets cursor moves, which the next one replaces anyway. */
+const SKIP_CURSORS_AT = 256 * 1024;
+/** A client this far behind is cut off; its browser reconnects and starts again from a fresh snapshot. */
+const DROP_CLIENT_AT = 4 * 1024 * 1024;
 
 function writeEvent(res: Response, event: SessionEvent): void {
   res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`);
@@ -37,10 +41,34 @@ export function sessionEventsRoutes(service: SessionStreamService, liveBoard: Li
         access: "authenticated",
         handler: async (req, res) => {
           const sessionId = parseUuidParam(req.params.id, "id");
-          const stream = await service.subscribe(requireAuth(req), sessionId, {
-            send: (event) => writeEvent(res, event),
-            close: () => res.end(),
+          // the client may leave while the snapshot is still being read: remember it, so its subscription is not kept forever
+          let gone = false;
+          let cleanup: (() => void) | null = null;
+          res.on("close", () => {
+            gone = true;
+            cleanup?.();
           });
+          const open = () => !gone && !res.writableEnded && !res.destroyed;
+
+          const stream = await service.subscribe(requireAuth(req), sessionId, {
+            send: (event) => {
+              if (!open()) return;
+              const behind = res.writableLength;
+              if (behind > DROP_CLIENT_AT) {
+                res.destroy();
+                return;
+              }
+              if (event.type === "cursor" && behind > SKIP_CURSORS_AT) return;
+              writeEvent(res, event);
+            },
+            close: () => {
+              if (open()) res.end();
+            },
+          });
+          if (!open()) {
+            stream.unsubscribe();
+            return;
+          }
 
           res.status(200).set({
             "Content-Type": "text/event-stream; charset=utf-8",
@@ -56,11 +84,14 @@ export function sessionEventsRoutes(service: SessionStreamService, liveBoard: Li
             return;
           }
 
-          const heartbeat = setInterval(() => res.write(": ping\n\n"), HEARTBEAT_MS);
-          res.on("close", () => {
+          const heartbeat = setInterval(() => {
+            if (open()) res.write(": ping\n\n");
+          }, HEARTBEAT_MS);
+          cleanup = () => {
+            cleanup = null;
             clearInterval(heartbeat);
             stream.unsubscribe();
-          });
+          };
           stream.activate();
         },
         doc: {

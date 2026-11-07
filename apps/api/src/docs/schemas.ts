@@ -333,6 +333,28 @@ export const schemas = {
       teacher_id: { type: "string", format: "uuid", description: "The teacher who teaches this class." },
     },
   },
+  CreateTeacherClassRequest: {
+    type: "object",
+    required: ["name"],
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 100 },
+      class_code: { type: "string", pattern: "^[A-Z0-9_-]{3,32}$", description: "Optional; made up when left out. Cannot be changed later." },
+    },
+  },
+  UpdateTeacherClassRequest: {
+    type: "object",
+    minProperties: 1,
+    properties: { name: { type: "string", minLength: 1, maxLength: 100 }, archived: { type: "boolean" } },
+  },
+  CreateClassStudentRequest: {
+    type: "object",
+    required: ["username", "name", "password"],
+    properties: {
+      username: { type: "string", pattern: "^[a-z0-9_.-]{3,32}$", description: "Case-insensitive; stored in lower case." },
+      name: { type: "string", minLength: 1, maxLength: 100 },
+      password: { type: "string", format: "password", minLength: 8, maxLength: 72, description: "At least one letter and one digit." },
+    },
+  },
   UpdateClassRequest: {
     type: "object",
     minProperties: 1,

@@ -59,7 +59,9 @@ export function createLiveChannel(): LiveChannel {
     subscribe(listener) {
       listeners.add(listener);
       if (latestSnapshot) listener(latestSnapshot);
-      return () => listeners.delete(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }
@@ -258,10 +260,25 @@ export function useLiveSync({
     if (changed) schedule(40);
   }, [channel, elements]);
 
+  const cursorQueue = useRef(new Map<string, Extract<LiveEvent, { type: "cursor" }>>());
+  const cursorFrame = useRef<number | null>(null);
+  const flushCursors = useCallback(() => {
+    cursorFrame.current = null;
+    const moves = cursorQueue.current;
+    if (moves.size === 0) return;
+    cursorQueue.current = new Map();
+    const now = Date.now();
+    setCursors((all) => {
+      const next = all.filter((c) => !moves.has(c.id));
+      for (const { actor, point } of moves.values()) if (point) next.push({ ...actor, x: point[0], y: point[1], at: now });
+      return next;
+    });
+  }, []);
+
   // what the others do
   useEffect(() => {
     if (!channel) return;
-    return channel.subscribe((event) => {
+    const unsubscribe = channel.subscribe((event) => {
       switch (event.type) {
         case "snapshot": {
           // (re)connected: the server's board, with this viewer's changes it has not got yet kept on top, to be sent
@@ -305,16 +322,29 @@ export function useLiveSync({
           break;
         case "cursor": {
           if (event.actor.id === meRef.current?.id) break;
-          const { actor, point } = event;
-          setCursors((all) => {
-            const others = all.filter((c) => c.id !== actor.id);
-            return point ? [...others, { ...actor, x: point[0], y: point[1], at: Date.now() }] : others;
-          });
+          // a class moving its pointers sends many of these a second: keep the latest per person, render once a frame
+          cursorQueue.current.set(event.actor.id, event);
+          if (cursorFrame.current === null) cursorFrame.current = requestAnimationFrame(flushCursors);
           break;
         }
       }
     });
-  }, [channel, elementsRef, setOnline]);
+    return () => {
+      unsubscribe();
+      if (cursorFrame.current !== null) cancelAnimationFrame(cursorFrame.current);
+      cursorFrame.current = null;
+      cursorQueue.current.clear();
+    };
+  }, [channel, elementsRef, setOnline, flushCursors]);
+
+  // nothing is sent after the board is gone
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+    },
+    [],
+  );
 
   // a cursor that went quiet fades away
   useEffect(() => {

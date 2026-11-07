@@ -1,12 +1,13 @@
 "use client";
 
 import { Activity, AlertTriangle, BarChart3, CheckCircle2, Circle, Clock, Download, Lock, PencilLine, RefreshCw, Repeat, Trophy, Users, WifiOff, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { closeQuizAction, quizExportAction, quizResultsAction } from "@/app/actions/quizzes";
 import { Spinner } from "@/components/ui/loaders";
 import { useToast } from "@/components/ui/toast";
 import type { QuizResults } from "@/lib/api/types";
 import type { LiveChannel } from "../board/live-sync";
+import { useLiveRefresh } from "../use-live-refresh";
 
 const KIND_LABEL: Record<string, string> = { pretest: "Pre-Test", posttest: "Post-Test", quiz: "Kuis" };
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -194,7 +195,6 @@ export function QuizResultsPanel({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"live" | "rank" | "questions">("live");
   const [busy, setBusy] = useState<"close" | "export" | null>(null);
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
     () =>
@@ -219,22 +219,7 @@ export function QuizResultsPanel({
     };
   }, [quizId, sessionId]);
 
-  // a student answered: refresh, at most twice a second however many answer at once
-  useEffect(() => {
-    if (!channel) return;
-    const unsubscribe = channel.subscribe((event) => {
-      if (refreshTimer.current || (event.type === "quiz" ? event.quizId !== quizId : event.type !== "presence")) return;
-      refreshTimer.current = setTimeout(() => {
-        refreshTimer.current = null;
-        void load();
-      }, 500);
-    });
-    return () => {
-      unsubscribe();
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      refreshTimer.current = null;
-    };
-  }, [channel, load, quizId]);
+  useLiveRefresh(channel ?? null, (event) => (event.type === "quiz" ? event.quizId === quizId : event.type === "presence"), load);
 
   async function closeQuiz() {
     setBusy("close");

@@ -57,7 +57,7 @@ function ReadyVisual({ item, saving, onPaste, onToggleSave }: { item: LibraryVis
   return (
     <li className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface transition-shadow hover:shadow-[var(--shadow-overlay)]">
       <button type="button" onClick={paste} aria-label={`Tempel ${item.visual.title} ke papan`} className="group relative block border-b border-border bg-bg p-2">
-        <VisualThumb visual={item.visual} className="h-36" />
+        <VisualThumb visual={item.visual} className="h-36 w-full" />
         <span className="absolute inset-0 flex items-center justify-center bg-primary/0 text-small font-semibold text-transparent transition-colors group-hover:bg-primary/10 group-hover:text-primary">
           Klik untuk menempel
         </span>
@@ -89,7 +89,7 @@ function ReadyVisual({ item, saving, onPaste, onToggleSave }: { item: LibraryVis
 function HistoryVisual({ item, saving, onPaste, onToggleSave }: { item: LibraryVisual; saving: boolean; onPaste: () => void; onToggleSave: () => void }) {
   return (
     <li className="flex items-center gap-3 rounded-lg border border-border bg-surface p-2">
-      <VisualThumb visual={item.visual} className="h-14 w-20 shrink-0" />
+      <VisualThumb visual={item.visual} className="h-14 w-20 shrink-0 object-contain" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-small font-semibold text-ink" title={item.visual.title}>
           {item.visual.title}
@@ -165,7 +165,7 @@ export function MaterialPanel({
   addingQuiz?: boolean;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"material" | "ai">(askRequest ? "ai" : "material");
+  const [tab, setTab] = useState<"material" | "visual" | "ai">(askRequest ? "ai" : "material");
   const clamp = (value: number) => Math.round(Math.min(maxWidth, Math.max(PANEL_PX, value)));
   const expanded = width > PANEL_PX + 8;
   /** Dragging the left edge: the panel grows to the left, so the pointer moving left makes it wider. */
@@ -285,6 +285,7 @@ export function MaterialPanel({
         {(
           [
             { id: "material", label: "Materi", Icon: BookOpen },
+            { id: "visual", label: "Visualisasi", Icon: Workflow },
             { id: "ai", label: "Tanya AI", Icon: Sparkles },
           ] as const
         ).map(({ id, label, Icon }) => (
@@ -294,7 +295,7 @@ export function MaterialPanel({
             role="tab"
             aria-selected={tab === id}
             onClick={() => setTab(id)}
-            className={`inline-flex min-h-9 flex-1 select-none items-center justify-center gap-1.5 rounded-md px-3 text-caption font-semibold transition-colors ${
+            className={`inline-flex min-h-9 min-w-0 flex-1 select-none items-center justify-center gap-1.5 rounded-md px-2 text-caption font-semibold transition-colors ${
               tab === id ? "bg-surface text-primary shadow-sm" : "text-muted hover:text-ink"
             }`}
           >
@@ -310,7 +311,7 @@ export function MaterialPanel({
         </p>
       ) : tab === "ai" ? (
         <AiChat chatId={material.id} stream={stream} askRequest={askRequest} onAskSent={onAskSent} onAddMindmap={onAddMindmap} onAddNote={onAddNote} onAddFlow={onAddFlow} />
-      ) : (
+      ) : tab === "visual" ? (
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4">
           <section aria-label="Visualisasi siap tempel" className="flex flex-col gap-2.5">
             <div>
@@ -357,7 +358,9 @@ export function MaterialPanel({
               </details>
             )}
           </section>
-
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4">
           <Link
             href={`/teacher/materials/${material.id}`}
             target="_blank"

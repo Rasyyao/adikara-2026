@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { ApiError } from "@/lib/api/errors";
 import { authApi } from "@/lib/api/endpoints";
 import type { PublicUser } from "@/lib/api/types";
@@ -22,6 +23,7 @@ export function homeFor(role: PublicUser["role"]): "/teacher" | "/student" {
  * that a cookie exists, which is a convenience redirect and not a security boundary.
  */
 export const getViewer = cache(async (area?: "staff" | "student"): Promise<Viewer | null> => {
+  await connection(); // the viewer is per request: opt out of prerendering before anything time-dependent (fetch timeouts) runs
   const primary = await getToken(area);
   const fallback = area ? await getToken() : undefined;
   const candidates = [...new Set([primary, fallback].filter((t): t is string => Boolean(t)))];

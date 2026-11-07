@@ -213,8 +213,11 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
       const session = await core.loadManaged(auth, sessionId);
       if (session.status === "ENDED") throw sessionEnded();
 
+      // nobody's remembered access may outlive the class: before the final save, and again once it is marked ended
+      liveBoard?.forget?.(session.id);
       await liveBoard?.flush?.(session.id);
       const ended = await core.endNow(session);
+      liveBoard?.forget?.(session.id);
       return { session: toSessionView(ended), attendance: await buildAttendance(ended) };
     },
 
@@ -232,6 +235,7 @@ export function createTeacherSessionService(repository: TeacherSessionRepository
         leftAt: participant.leftAt ?? now,
       });
       core.cancelLeave(session.id, studentId);
+      liveBoard?.forget?.(session.id, studentId); // a removed student cannot draw on with access remembered from before
       hub.publish(session.id, { type: "kicked", data: {} }, { studentId });
       hub.close(session.id, studentId);
       hub.publish(session.id, { type: "participant_left", data: { student_id: studentId, reason: "kicked" } }, "staff");

@@ -1,7 +1,7 @@
 import { AppError } from "../../http/errors.js";
 import type { AuthContext } from "../../types/auth.types.js";
 import type { AttemptRecord, QuizQuestion } from "../../types/shared/quiz.types.js";
-import type { InsightQuiz, InsightSession, TeacherInsightsRepository } from "../../types/teacher/insights.types.js";
+import type { ClassReportRecord, InsightQuiz, InsightSession, TeacherInsightsRepository, TeachingActivity } from "../../types/teacher/insights.types.js";
 
 // The teacher's dashboard: how much of each class takes part, how the quizzes went, which questions and which parts of the
 // material the class gets wrong most, and which students need help (with the questions they missed). Everything is
@@ -106,8 +106,102 @@ export interface InsightsOverview {
   }[];
 }
 
+/** The AI's feedback for the teacher, as the worker writes it (see adikara-ai/report_gen.py). */
+export interface ReportFeedback {
+  summary: string;
+  focus_topics: { topic: string; finding: string; suggestion: string }[];
+  questions: { question: string; misconception: string; suggestion: string }[];
+  students: { name: string; reason: string; action: string }[];
+  next_steps: string[];
+}
+
+export interface ReportView {
+  id: string;
+  status: "pending" | "done" | "failed";
+  created_at: string;
+  finished_at: string | null;
+  error: string | null;
+  feedback: ReportFeedback | null;
+}
+
+/** One class: the dashboard numbers for its sessions alone, plus who attended which session and the latest AI feedback. */
+export interface ClassInsights extends InsightsOverview {
+  class: { id: string; name: string; student_count: number };
+  attendance: {
+    /** Started sessions, oldest first (at most the newest ATTENDANCE_LIMIT). */
+    sessions: { id: string; date: string; material_title: string | null; status: InsightSession["status"] }[];
+    /** Everyone on the roster, lowest attendance first; `present` lines up with `sessions`. */
+    students: { student_id: string; name: string; username: string | null; present: boolean[]; attended: number; rate: number | null }[];
+  };
+  report: ReportView | null;
+}
+
 export interface TeacherInsightsService {
   overview(auth: AuthContext): Promise<InsightsOverview>;
+  classView(auth: AuthContext, classId: string): Promise<ClassInsights>;
+  /** Queues AI feedback on the class's current results; a request still being written is returned instead of a new one. */
+  requestFeedback(auth: AuthContext, classId: string): Promise<{ report: ReportView }>;
+  feedback(auth: AuthContext, classId: string): Promise<{ report: ReportView | null }>;
+}
+
+const ATTENDANCE_LIMIT = 15;
+/** A pending report older than this is treated as lost (the worker died), so a new one may be requested. */
+const PENDING_FOR_MS = 10 * 60 * 1000;
+const str = (v: unknown, max = 600) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+const list = (v: unknown) => (Array.isArray(v) ? v : []);
+const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+
+/** The worker's JSON, trimmed to the shape the page renders; anything else is dropped. */
+function toFeedback(raw: unknown): ReportFeedback | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = obj(raw);
+  return {
+    summary: str(r.summary, 2000),
+    focus_topics: list(r.focus_topics).map(obj).map((t) => ({ topic: str(t.topic, 200), finding: str(t.finding), suggestion: str(t.suggestion) })).filter((t) => t.topic),
+    questions: list(r.questions).map(obj).map((q) => ({ question: str(q.question), misconception: str(q.misconception), suggestion: str(q.suggestion) })).filter((q) => q.question),
+    students: list(r.students).map(obj).map((s) => ({ name: str(s.name, 120), reason: str(s.reason), action: str(s.action) })).filter((s) => s.name),
+    next_steps: list(r.next_steps).map((x) => str(x)).filter(Boolean),
+  };
+}
+
+const reportView = (r: ClassReportRecord): ReportView => ({
+  id: r.id,
+  status: r.status,
+  created_at: r.createdAt.toISOString(),
+  finished_at: r.finishedAt?.toISOString() ?? null,
+  error: r.error,
+  feedback: r.status === "done" ? toFeedback(r.feedback) : null,
+});
+
+/** What the AI reads: the class's results, small enough for a prompt and without anything it does not need. */
+function reportInput(view: ClassInsights) {
+  return {
+    class_name: view.class.name,
+    student_count: view.class.student_count,
+    sessions: view.totals.sessions,
+    participation_rate: view.totals.participation_rate,
+    correct_rate: view.totals.correct_rate,
+    quizzes: view.quizzes.slice(0, 10).map((q) => ({ title: q.title, kind: q.kind, questions: q.question_count, joined: q.joined, submitted: q.submitted, average_percent: q.average_percent })),
+    hardest_questions: view.hardest_questions.slice(0, 8).map((q) => ({
+      quiz: q.quiz_title,
+      topic: q.topic,
+      question: q.question,
+      correct_answer: q.answer_text ?? q.answer,
+      most_picked_wrong: q.top_wrong ? { answer: q.top_wrong.text || q.top_wrong.key, students: q.top_wrong.count } : null,
+      answered: q.answered,
+      wrong: q.wrong,
+      correct_rate: q.correct_rate,
+    })),
+    topics: view.topics.slice(0, 8).map((t) => ({ topic: t.topic, correct_rate: t.correct_rate, wrong: t.wrong, answered: t.answered, struggling_students: t.struggling_students })),
+    students_needing_help: view.students
+      .filter((s) => s.correct_rate !== null && s.correct_rate < 0.6)
+      .slice(0, 10)
+      .map((s) => ({ name: s.name, correct_rate: s.correct_rate, sessions_joined: s.sessions_joined, class_sessions: s.class_sessions, weakest_topic: s.weakest_topic })),
+    low_attendance: view.attendance.students
+      .filter((s) => s.rate !== null && s.rate < 0.75)
+      .slice(0, 10)
+      .map((s) => ({ name: s.name, attended: s.attended, of: view.attendance.sessions.length })),
+  };
 }
 
 interface Answer {
@@ -121,11 +215,8 @@ interface Answer {
   topic: string;
 }
 
-export function createTeacherInsightsService(repository: TeacherInsightsRepository, now: () => Date = () => new Date()): TeacherInsightsService {
-  return {
-    async overview(auth) {
-      if (auth.kind !== "teacher") throw new AppError(403, "forbidden", "You do not have access to this resource");
-      const activity = await repository.loadActivity(auth.role === "ADMIN" ? null : auth.userId, SESSION_WINDOW);
+/** The dashboard numbers, from whatever activity is loaded (every class of a teacher, or one class). */
+function summarize(activity: TeachingActivity, now: Date): InsightsOverview {
       const classById = new Map(activity.classes.map((c) => [c.id, c]));
       const sessionById = new Map(activity.sessions.map((s) => [s.id, s]));
       const className = (classId: string | undefined) => (classId && classById.get(classId)?.name) || "Kelas";
@@ -308,7 +399,7 @@ export function createTeacherInsightsService(repository: TeacherInsightsReposito
 
       const participation = started.flatMap((s) => (participationOf(s) === null ? [] : [participationOf(s)!]));
       return {
-        generated_at: now().toISOString(),
+        generated_at: now.toISOString(),
         window: { sessions: SESSION_WINDOW },
         totals: {
           classes: activity.classes.length,
@@ -327,6 +418,81 @@ export function createTeacherInsightsService(repository: TeacherInsightsReposito
         topics,
         students,
       };
+}
+
+export function createTeacherInsightsService(repository: TeacherInsightsRepository, now: () => Date = () => new Date()): TeacherInsightsService {
+  const teacherOnly = (auth: AuthContext) => {
+    if (auth.kind !== "teacher") throw new AppError(403, "forbidden", "You do not have access to this resource");
+  };
+  /** The class, if this teacher teaches it (an admin sees every class). */
+  const ownClass = async (auth: AuthContext, classId: string) => {
+    teacherOnly(auth);
+    const cls = await repository.findClass(classId);
+    if (!cls || (auth.role !== "ADMIN" && cls.teacherId !== auth.userId)) throw new AppError(404, "class_not_found", "Class not found");
+    return cls;
+  };
+
+  const classView = async (auth: AuthContext, classId: string): Promise<ClassInsights> => {
+    const cls = await ownClass(auth, classId);
+    const [activity, roster, latest] = await Promise.all([repository.loadActivity(null, SESSION_WINDOW, classId), repository.listRoster(classId), repository.latestReport(classId)]);
+    const summary = summarize(activity, now());
+    const started = activity.sessions.filter((s) => s.startedAt !== null || s.status !== "LOBBY");
+    const columns = started.slice(0, ATTENDANCE_LIMIT).reverse();
+    const attendance = {
+      sessions: columns.map((s) => ({ id: s.id, date: (s.startedAt ?? s.createdAt).toISOString(), material_title: s.materialTitle, status: s.status })),
+      students: roster
+        .map((st) => {
+          const present = columns.map((s) => s.participants.some((p) => p.studentId === st.id));
+          const attended = present.filter(Boolean).length;
+          return { student_id: st.id, name: st.name ?? st.username ?? "Siswa", username: st.username, present, attended, rate: rate(attended, columns.length) };
+        })
+        .sort((a, b) => (a.rate ?? 2) - (b.rate ?? 2) || a.name.localeCompare(b.name)),
+    };
+    // students on the roster who never joined a session still belong in the class's list
+    const listed = new Set(summary.students.map((s) => s.student_id));
+    const absent = roster
+      .filter((st) => !listed.has(st.id))
+      .map((st) => ({
+        student_id: st.id,
+        name: st.name ?? st.username ?? "Siswa",
+        username: st.username,
+        class_name: cls.name,
+        sessions_joined: 0,
+        class_sessions: started.length,
+        quizzes_taken: 0,
+        answered: 0,
+        correct: 0,
+        correct_rate: null,
+        weakest_topic: null,
+        missed: [],
+      }));
+    return {
+      ...summary,
+      students: [...summary.students, ...absent],
+      class: { id: cls.id, name: cls.name, student_count: roster.length },
+      attendance,
+      report: latest ? reportView(latest) : null,
+    };
+  };
+
+  return {
+    async overview(auth) {
+      teacherOnly(auth);
+      return summarize(await repository.loadActivity(auth.role === "ADMIN" ? null : auth.userId, SESSION_WINDOW), now());
+    },
+    classView,
+    async requestFeedback(auth, classId) {
+      const view = await classView(auth, classId);
+      const latest = view.report;
+      if (latest?.status === "pending" && now().getTime() - new Date(latest.created_at).getTime() < PENDING_FOR_MS) return { report: latest };
+      if (view.totals.submissions === 0) throw new AppError(409, "no_results", "This class has no handed-in quizzes to analyse yet");
+      const created = await repository.createReport({ classId, teacherId: auth.userId, input: reportInput(view) });
+      return { report: reportView(created) };
+    },
+    async feedback(auth, classId) {
+      await ownClass(auth, classId);
+      const latest = await repository.latestReport(classId);
+      return { report: latest ? reportView(latest) : null };
     },
   };
 }

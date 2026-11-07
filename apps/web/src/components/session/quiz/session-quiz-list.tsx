@@ -1,10 +1,11 @@
 "use client";
 
 import { Activity, BarChart3, ClipboardList } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { listQuizzesAction } from "@/app/actions/quizzes";
 import type { QuizView } from "@/lib/api/types";
 import type { LiveChannel } from "../board/live-sync";
+import { useLiveRefresh } from "../use-live-refresh";
 import { QuizResultsPanel } from "./quiz-results";
 
 type Row = QuizView & { started: number; submitted: number };
@@ -13,7 +14,6 @@ type Row = QuizView & { started: number; submitted: number };
 export function SessionQuizList({ sessionId, channel }: { sessionId: string; channel: LiveChannel | null }) {
   const [items, setItems] = useState<Row[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(() => listQuizzesAction(sessionId).then((result) => result.ok && setItems(result.data.items)), [sessionId]);
 
@@ -25,21 +25,7 @@ export function SessionQuizList({ sessionId, channel }: { sessionId: string; cha
     };
   }, [sessionId]);
 
-  useEffect(() => {
-    if (!channel) return;
-    const unsubscribe = channel.subscribe((event) => {
-      if (event.type !== "quiz" || timer.current) return;
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        void load();
-      }, 800);
-    });
-    return () => {
-      unsubscribe();
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = null;
-    };
-  }, [channel, load]);
+  useLiveRefresh(channel ?? null, (event) => event.type === "quiz", load);
 
   return (
     <section aria-label="Kuis sesi ini" className="flex flex-col gap-3 rounded-lg bg-surface p-6">

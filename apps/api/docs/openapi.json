@@ -30,7 +30,7 @@
     },
     {
       "name": "Teacher · classes",
-      "description": "Endpoints for teachers (admins can use them too). Log in at `POST /auth/login`. The classes a teacher teaches and their students (read-only; the admin assigns classes and students)."
+      "description": "Endpoints for teachers (admins can use them too). Log in at `POST /auth/login`. The classes a teacher teaches: create, rename, archive and delete them, and add, edit, move and remove their students. Only students of a class can join its live sessions."
     },
     {
       "name": "Teacher · insights",
@@ -2303,6 +2303,131 @@
         },
         "x-access": "staff",
         "x-role": "teacher"
+      },
+      "post": {
+        "tags": [
+          "Teacher · classes"
+        ],
+        "summary": "Create a class",
+        "description": "The class belongs to the caller. Leave `class_code` out to get a made-up one; it never changes later.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "post_classes",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTeacherClassRequest"
+              },
+              "example": {
+                "name": "Kelas 7B"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That class code is already used.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "class_code_taken",
+                    "message": "That class code is already used"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
       }
     },
     "/classes/{id}": {
@@ -2427,6 +2552,743 @@
         },
         "x-access": "staff",
         "x-role": "teacher"
+      },
+      "patch": {
+        "tags": [
+          "Teacher · classes"
+        ],
+        "summary": "Rename, archive or restore a class",
+        "description": "Archiving is refused (`class_has_live_session`) while the class has a live session.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "patch_classes_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTeacherClassRequest"
+              },
+              "example": {
+                "name": "Kelas 7C"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such class, or it belongs to another teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "class_not_found",
+                    "message": "Class not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The class has a live session; end it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "class_has_live_session",
+                    "message": "End the class's live session first"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      },
+      "delete": {
+        "tags": [
+          "Teacher · classes"
+        ],
+        "summary": "Delete a class",
+        "description": "Refused with `class_in_use` while the class has students or session history. Archive it instead.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "delete_classes_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such class, or it belongs to another teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "class_not_found",
+                    "message": "Class not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The class still has students or session history.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "class_in_use",
+                    "message": "The class still has students or session history."
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/classes/{id}/students": {
+      "post": {
+        "tags": [
+          "Teacher · classes"
+        ],
+        "summary": "Add a student to a class",
+        "description": "Creates the student account. The student logs in at `POST /auth/student/login` and can join this class's live sessions.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "post_classes_id_students",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClassStudentRequest"
+              },
+              "example": {
+                "username": "siswa.empat",
+                "name": "Siswa Empat",
+                "password": "Siswa-pass-123"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such class, or it belongs to another teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "class_not_found",
+                    "message": "Class not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That username is already used by another student.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "username_taken",
+                    "message": "That username is already used by another student"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/classes/{id}/students/{studentId}": {
+      "patch": {
+        "tags": [
+          "Teacher · classes"
+        ],
+        "summary": "Edit a student or move them to another of my classes",
+        "description": "Send only the fields to change. `class_id` must be another class of the same teacher. A student in a live session cannot be moved.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "patch_classes_id_students_studentId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStudentRequest"
+              },
+              "example": {
+                "name": "Siswa Baru"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such student in this class.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "student_not_found",
+                    "message": "Student not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That username is already used by another student.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "username_taken",
+                    "message": "That username is already used by another student"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      },
+      "delete": {
+        "tags": [
+          "Teacher · classes"
+        ],
+        "summary": "Remove a student",
+        "description": "Refused with `student_in_use` when the student has learning records, and `student_in_live_session` while they are in a live session.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "delete_classes_id_students_studentId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "studentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such student in this class.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "student_not_found",
+                    "message": "Student not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The student is in a live session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "student_in_live_session",
+                    "message": "The student is in a live session. Remove them after it ends."
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
       }
     },
     "/insights": {
@@ -2480,6 +3342,404 @@
                   "error": {
                     "code": "forbidden",
                     "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/insights/classes/{id}": {
+      "get": {
+        "tags": [
+          "Teacher · insights"
+        ],
+        "summary": "Insights for one class",
+        "description": "The same numbers as `/insights`, from this class's newest 30 sessions only, with every student on the roster in `students`. `attendance` lists the started sessions (oldest first) and, per student, `present` for each of them. `report` is the newest AI feedback: `status` `pending` (the AI is writing it; poll), `done` (with `feedback`: `summary`, `focus_topics`, `questions` with the likely misconception, `students` to help, `next_steps`) or `failed` (`error` says why).\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "get_insights_classes_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The class insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such class, or another teacher teaches it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "class_not_found",
+                    "message": "Class not found"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      }
+    },
+    "/insights/classes/{id}/feedback": {
+      "post": {
+        "tags": [
+          "Teacher · insights"
+        ],
+        "summary": "Ask the AI for feedback on a class",
+        "description": "Sends the class's current results (hardest questions, weak topics, students needing help, attendance) to the AI worker, which writes feedback for the teacher. While one is still `pending` it is returned instead of a new one. Poll `GET …/feedback`.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "post_insights_classes_id_feedback",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "No body needed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "example": {}
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The pending report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such class, or another teacher teaches it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "class_not_found",
+                    "message": "Class not found"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No quiz has been handed in in this class yet, so there is nothing to analyse.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "no_results",
+                    "message": "This class has no handed-in quizzes to analyse yet"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "internal_error",
+                    "message": "Internal server error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-access": "staff",
+        "x-role": "teacher"
+      },
+      "get": {
+        "tags": [
+          "Teacher · insights"
+        ],
+        "summary": "The newest AI feedback on a class",
+        "description": "`report` is the newest AI feedback: `status` `pending` (the AI is writing it; poll), `done` (with `feedback`: `summary`, `focus_topics`, `questions` with the likely misconception, `students` to help, `next_steps`) or `failed` (`error` says why). `report` is null when none was asked for yet.\n\n**For:** Teacher · **Access:** staff (teachers and admins)",
+        "operationId": "get_insights_classes_id_feedback",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body (field errors are in `error.details.fields`) or malformed JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Request validation failed",
+                    "details": {
+                      "fields": {
+                        "email": "must be a valid email address"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthenticated",
+                    "message": "Authentication required"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Logged in, but the role is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "forbidden",
+                    "message": "You do not have access to this resource"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such class, or another teacher teaches it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "class_not_found",
+                    "message": "Class not found"
                   }
                 }
               }
@@ -10916,6 +12176,65 @@
             "type": "string",
             "format": "uuid",
             "description": "The teacher who teaches this class."
+          }
+        }
+      },
+      "CreateTeacherClassRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "class_code": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_-]{3,32}$",
+            "description": "Optional; made up when left out. Cannot be changed later."
+          }
+        }
+      },
+      "UpdateTeacherClassRequest": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "archived": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateClassStudentRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "name",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]{3,32}$",
+            "description": "Case-insensitive; stored in lower case."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "maxLength": 72,
+            "description": "At least one letter and one digit."
           }
         }
       },
